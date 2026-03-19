@@ -1178,6 +1178,12 @@ impl Parser {
     /// Encode and enqueue a packet for output. The wire bytes become available
     /// via [`drain()`](Self::drain) or [`drain_output()`](Self::drain_output).
     pub fn send(&mut self, packet: Packet) -> Result<()> {
+        // Hello must be sendable before negotiation; all other packets require
+        // peer caps so that capability-dependent wire formats are correct.
+        if !matches!(packet, Packet::Hello { .. }) && self.peer_caps.is_none() {
+            return Err(Error::NoPeerCaps);
+        }
+
         let pkt_type = packet.packet_type();
         let id = packet.id().unwrap_or(0);
         let type_header_len = self.get_type_header_len(pkt_type, true)?;

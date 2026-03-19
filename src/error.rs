@@ -35,6 +35,8 @@ pub enum Error {
     WrongDirectionPacket,
     #[error("non-input endpoint for receiving: {endpoint}")]
     NonInputEndpoint { endpoint: Endpoint },
+    #[error("peer hello not yet received — cannot send capability-dependent packets")]
+    NoPeerCaps,
     #[error("filter error: {0}")]
     Filter(#[from] FilterError),
     #[cfg(feature = "std")]
