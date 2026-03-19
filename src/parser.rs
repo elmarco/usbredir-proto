@@ -1,7 +1,5 @@
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
-#[cfg(not(feature = "tracing"))]
-use alloc::format;
 use alloc::string::{String, ToString};
 
 use bytes::{Bytes, BytesMut};
@@ -92,23 +90,14 @@ impl ParserConfig {
     }
 }
 
-/// Severity level for log messages emitted by the parser.
-#[derive(Debug)]
-#[non_exhaustive]
-pub enum LogLevel {
-    Error,
-    Warning,
-    Info,
-    Debug,
-}
-
 /// An event produced by [`Parser::poll()`] or [`Parser::events()`].
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Event {
+    /// A successfully decoded packet.
     Packet(Box<Packet>),
+    /// A parse error encountered while decoding input.
     ParseError(Error),
-    Log { level: LogLevel, message: String },
 }
 
 /// Parse state machine: tracks whether we're waiting for a packet header
@@ -478,6 +467,19 @@ impl Parser {
         self.events.pop_front()
     }
 
+    /// Pull the next decoded packet, skipping any parse errors.
+    ///
+    /// This is a convenience wrapper around [`poll()`](Self::poll) for callers
+    /// that don't need to handle parse errors. Errors are silently discarded.
+    pub fn poll_packet(&mut self) -> Option<Box<Packet>> {
+        loop {
+            match self.events.pop_front()? {
+                Event::Packet(p) => return Some(p),
+                Event::ParseError(_) => continue,
+            }
+        }
+    }
+
     /// Returns an iterator that drains all pending events.
     pub fn events(&mut self) -> impl Iterator<Item = Event> + '_ {
         core::iter::from_fn(move || self.events.pop_front())
@@ -586,6 +588,7 @@ impl Parser {
                             // Intercept hello to store peer caps
                             if let Packet::Hello {
                                 ref caps,
+                                #[cfg(feature = "tracing")]
                                 ref version,
                                 ..
                             } = packet
@@ -593,30 +596,20 @@ impl Parser {
                                 if self.peer_caps.is_some() {
                                     #[cfg(feature = "tracing")]
                                     tracing::error!("Received second hello message, ignoring");
-                                    #[cfg(not(feature = "tracing"))]
-                                    self.events.push_back(Event::Log {
-                                        level: LogLevel::Error,
-                                        message: "Received second hello message, ignoring"
-                                            .to_string(),
-                                    });
                                 } else {
                                     let mut peer_caps = *caps;
                                     peer_caps.verify();
                                     self.peer_caps = Some(peer_caps);
-                                    let id_bits = if self.using_32bit_ids() { 32 } else { 64 };
                                     #[cfg(feature = "tracing")]
-                                    tracing::info!(
-                                        peer_version = %version,
-                                        id_bits,
-                                        "Peer hello received"
-                                    );
-                                    #[cfg(not(feature = "tracing"))]
-                                    self.events.push_back(Event::Log {
-                                        level: LogLevel::Info,
-                                        message: format!(
-                                            "Peer version: {version}, using {id_bits}-bits ids"
-                                        ),
-                                    });
+                                    {
+                                        let id_bits =
+                                            if self.using_32bit_ids() { 32 } else { 64 };
+                                        tracing::info!(
+                                            peer_version = %version,
+                                            id_bits,
+                                            "Peer hello received"
+                                        );
+                                    }
                                 }
                             }
                             self.events.push_back(Event::Packet(Box::new(packet)));

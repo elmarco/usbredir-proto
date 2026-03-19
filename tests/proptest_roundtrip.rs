@@ -53,7 +53,7 @@ fn roundtrip(sender: &mut Parser, receiver: &mut Parser, packet: Packet) -> Pack
     loop {
         match receiver.poll().unwrap() {
             Event::Packet(p) => return *p,
-            Event::Log { .. } | Event::ParseError(_) => continue,
+            Event::ParseError(_) => continue,
             _ => continue,
         }
     }

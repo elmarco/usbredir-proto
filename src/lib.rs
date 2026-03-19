@@ -71,5 +71,5 @@ pub use caps::{Cap, Caps};
 pub use error::{Error, FilterError, Result};
 pub use filter::{CheckFlags, FilterResult, FilterRule};
 pub use packet::{DataKind, DataPacket, Packet};
-pub use parser::{Event, LogLevel, Parser, ParserConfig};
+pub use parser::{Event, Parser, ParserConfig};
 pub use proto::{Endpoint, Speed, Status, TransferType};
