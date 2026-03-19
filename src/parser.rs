@@ -191,7 +191,7 @@ impl Parser {
 
     /// Returns whether the peer advertises the given capability.
     pub fn peer_has_cap(&self, cap: Cap) -> bool {
-        self.peer_caps.map_or(false, |p| p.has(cap))
+        self.peer_caps.is_some_and(|p| p.has(cap))
     }
 
     fn using_32bit_ids(&self) -> bool {
@@ -208,7 +208,7 @@ impl Parser {
 
     fn negotiated(&self, cap: Cap) -> bool {
         self.peer_caps
-            .map_or(false, |p| self.our_caps.negotiated(&p, cap))
+            .is_some_and(|p| self.our_caps.negotiated(&p, cap))
     }
 
     fn get_type_header_len(&self, pkt_type: u32, sending: bool) -> Result<usize> {
@@ -1315,8 +1315,8 @@ impl Parser {
                         interval: *interval,
                         interface: *interface,
                     };
-                    for i in 0..32 {
-                        hdr.ep_type[i] = ep_type[i] as u8;
+                    for (i, et) in ep_type.iter().enumerate() {
+                        hdr.ep_type[i] = *et as u8;
                     }
                     write_hdr!(hdr);
                 }

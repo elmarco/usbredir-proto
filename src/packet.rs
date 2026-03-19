@@ -600,6 +600,7 @@ impl Packet {
 
     /// Create a ControlPacket.
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn control_packet(
         id: u64,
         endpoint: Endpoint,

@@ -24,11 +24,11 @@ use usbredirparser_sys as sys;
 // ---------------------------------------------------------------------------
 
 thread_local! {
-    static READ_BUF: RefCell<Vec<u8>> = RefCell::new(Vec::new());
-    static READ_POS: RefCell<usize> = RefCell::new(0);
-    static WRITE_BUF: RefCell<Vec<u8>> = RefCell::new(Vec::new());
+    static READ_BUF: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+    static READ_POS: RefCell<usize> = const { RefCell::new(0) };
+    static WRITE_BUF: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
     // Generic "a callback fired" counter — incremented by every stub callback
-    static CB_COUNT: RefCell<u32> = RefCell::new(0);
+    static CB_COUNT: RefCell<u32> = const { RefCell::new(0) };
 }
 
 fn reset_io() {
@@ -463,7 +463,7 @@ unsafe fn c_to_rust(
     rp.feed(&wire);
     let pkts = rust_drain_packets(&mut rp);
     assert!(
-        pkts.iter().any(|p| check_fn(p)),
+        pkts.iter().any(check_fn),
         "{name}: Rust did not decode expected packet from C bytes. Got: {pkts:?}"
     );
     sys::usbredirparser_destroy(cp);
@@ -477,7 +477,7 @@ unsafe fn rust_to_c(
 ) {
     let (cp, mut rp) = connected_pair(c_is_host);
 
-    rp.send(packet).expect(&format!("{name}: Rust send failed"));
+    rp.send(packet).unwrap_or_else(|_| panic!("{name}: Rust send failed"));
     let wire = rust_drain_all(&mut rp);
     assert!(!wire.is_empty(), "{name}: Rust produced no bytes");
 
@@ -506,7 +506,7 @@ unsafe fn byte_compare(
 
     // --- Rust side (Rust needs the same role as C, so flip c_is_host) ---
     let (cp_r, mut rp_r) = connected_pair(!c_is_host);
-    rp_r.send(packet).expect(&format!("{name}: Rust send failed"));
+    rp_r.send(packet).unwrap_or_else(|_| panic!("{name}: Rust send failed"));
     let rust_wire = rust_drain_all(&mut rp_r);
     sys::usbredirparser_destroy(cp_r);
 

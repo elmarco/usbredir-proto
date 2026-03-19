@@ -65,7 +65,7 @@ pub fn parse_rules(
             vendor_id: int_to_opt_u16(vendor_id)?,
             product_id: int_to_opt_u16(product_id)?,
             device_version_bcd: int_to_opt_u16(device_version_bcd)?,
-            allow: allow_val.map_or(false, |v| v != 0),
+            allow: allow_val.is_some_and(|v| v != 0),
         };
         verify_single_rule(&rule)?;
         rules.push(rule);
@@ -108,7 +108,7 @@ fn int_to_opt_u8(val: Option<i64>, max: u8) -> Result<Option<u8>, FilterError> {
 fn int_to_opt_u16(val: Option<i64>) -> Result<Option<u16>, FilterError> {
     match val {
         None => Ok(None),
-        Some(v) if v >= 0 && v <= 65535 => Ok(Some(v as u16)),
+        Some(v) if (0..=65535).contains(&v) => Ok(Some(v as u16)),
         _ => Err(FilterError::ValueOutOfRange),
     }
 }
@@ -178,12 +178,12 @@ fn check1(
     default_allow: bool,
 ) -> FilterResult {
     for rule in rules {
-        let class_match = rule.device_class.map_or(true, |c| c == device_class);
-        let vendor_match = rule.vendor_id.map_or(true, |v| v == vendor_id);
-        let product_match = rule.product_id.map_or(true, |p| p == product_id);
+        let class_match = rule.device_class.is_none_or(|c| c == device_class);
+        let vendor_match = rule.vendor_id.is_none_or(|v| v == vendor_id);
+        let product_match = rule.product_id.is_none_or(|p| p == product_id);
         let version_match = rule
             .device_version_bcd
-            .map_or(true, |d| d == device_version_bcd);
+            .is_none_or(|d| d == device_version_bcd);
 
         if class_match && vendor_match && product_match && version_match {
             return if rule.allow {
@@ -202,6 +202,7 @@ fn check1(
 }
 
 /// Check a device against a filter rule set, returning allow/deny/no-match.
+#[allow(clippy::too_many_arguments, clippy::only_used_in_recursion)]
 pub fn check(
     rules: &[FilterRule],
     device_class: u8,
