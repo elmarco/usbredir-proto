@@ -15,8 +15,8 @@
 - [x] Clippy pedantic — fixed `format!` appended to String, added `#[must_use]`, inline format args
 - [x] `Display` for `Packet`, `Status`, `TransferType`, `Speed` — concise format for logging
 - [x] `ParserConfig` builder — `Default` impl + `ParserConfig::new("v").is_host(true).cap(Cap::Ids64Bits)` chaining
-- [ ] Typed `Endpoint` newtype — deferred: high churn across all packet variants for modest gain
-- [ ] `Packet` helper constructors — deferred: 33 variants make constructors no simpler than struct literals
+- [x] Typed `Endpoint` newtype — `Endpoint` wrapping `u8` with `is_input()`, `number()`, `raw()` methods; replaces `endpoint: u8` in 14 packet variants
+- [x] `Packet` helper constructors — snake_case constructors for all 33 variants (e.g. `Packet::bulk_packet(id, ep, ...)`) with `impl Into<Bytes>` for data params
 
 ## Lower Priority / Polish
 

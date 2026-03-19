@@ -47,4 +47,4 @@ pub use error::{Error, FilterError, Result};
 pub use filter::{CheckFlags, FilterResult, FilterRule};
 pub use packet::Packet;
 pub use parser::{Event, LogLevel, Parser, ParserConfig};
-pub use proto::{Speed, Status, TransferType};
+pub use proto::{Endpoint, Speed, Status, TransferType};

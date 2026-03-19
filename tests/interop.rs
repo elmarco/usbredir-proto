@@ -763,9 +763,9 @@ fn interop_start_iso_stream() {
             let mut h = sys::usb_redir_start_iso_stream_header { endpoint: 0x81, pkts_per_urb: 8, no_urbs: 4 };
             sys::usbredirparser_send_start_iso_stream(cp, 30, &mut h);
         }
-        c_to_rust(false, c_encode, |p| matches!(p, Packet::StartIsoStream { id: 30, endpoint: 0x81, .. }), "start_iso_stream");
-        rust_to_c(true, Packet::StartIsoStream { id: 30, endpoint: 0x81, pkts_per_urb: 8, no_urbs: 4 }, "start_iso_stream");
-        byte_compare(false, c_encode, Packet::StartIsoStream { id: 30, endpoint: 0x81, pkts_per_urb: 8, no_urbs: 4 }, "start_iso_stream");
+        c_to_rust(false, c_encode, |p| matches!(p, Packet::StartIsoStream { id: 30, .. }), "start_iso_stream");
+        rust_to_c(true, Packet::StartIsoStream { id: 30, endpoint: Endpoint::new(0x81), pkts_per_urb: 8, no_urbs: 4 }, "start_iso_stream");
+        byte_compare(false, c_encode, Packet::StartIsoStream { id: 30, endpoint: Endpoint::new(0x81), pkts_per_urb: 8, no_urbs: 4 }, "start_iso_stream");
     }
 }
 
@@ -778,9 +778,9 @@ fn interop_stop_iso_stream() {
             let mut h = sys::usb_redir_stop_iso_stream_header { endpoint: 0x81 };
             sys::usbredirparser_send_stop_iso_stream(cp, 31, &mut h);
         }
-        c_to_rust(false, c_encode, |p| matches!(p, Packet::StopIsoStream { id: 31, endpoint: 0x81, .. }), "stop_iso_stream");
-        rust_to_c(true, Packet::StopIsoStream { id: 31, endpoint: 0x81 }, "stop_iso_stream");
-        byte_compare(false, c_encode, Packet::StopIsoStream { id: 31, endpoint: 0x81 }, "stop_iso_stream");
+        c_to_rust(false, c_encode, |p| matches!(p, Packet::StopIsoStream { id: 31, .. }), "stop_iso_stream");
+        rust_to_c(true, Packet::StopIsoStream { id: 31, endpoint: Endpoint::new(0x81) }, "stop_iso_stream");
+        byte_compare(false, c_encode, Packet::StopIsoStream { id: 31, endpoint: Endpoint::new(0x81) }, "stop_iso_stream");
     }
 }
 
@@ -793,9 +793,9 @@ fn interop_iso_stream_status() {
             let mut h = sys::usb_redir_iso_stream_status_header { status: 0, endpoint: 0x81 };
             sys::usbredirparser_send_iso_stream_status(cp, 32, &mut h);
         }
-        c_to_rust(true, c_encode, |p| matches!(p, Packet::IsoStreamStatus { id: 32, endpoint: 0x81, .. }), "iso_stream_status");
-        rust_to_c(false, Packet::IsoStreamStatus { id: 32, status: Status::Success, endpoint: 0x81 }, "iso_stream_status");
-        byte_compare(true, c_encode, Packet::IsoStreamStatus { id: 32, status: Status::Success, endpoint: 0x81 }, "iso_stream_status");
+        c_to_rust(true, c_encode, |p| matches!(p, Packet::IsoStreamStatus { id: 32, .. }), "iso_stream_status");
+        rust_to_c(false, Packet::IsoStreamStatus { id: 32, status: Status::Success, endpoint: Endpoint::new(0x81) }, "iso_stream_status");
+        byte_compare(true, c_encode, Packet::IsoStreamStatus { id: 32, status: Status::Success, endpoint: Endpoint::new(0x81) }, "iso_stream_status");
     }
 }
 
@@ -808,9 +808,9 @@ fn interop_start_interrupt_receiving() {
             let mut h = sys::usb_redir_start_interrupt_receiving_header { endpoint: 0x83 };
             sys::usbredirparser_send_start_interrupt_receiving(cp, 40, &mut h);
         }
-        c_to_rust(false, c_encode, |p| matches!(p, Packet::StartInterruptReceiving { id: 40, endpoint: 0x83, .. }), "start_interrupt_receiving");
-        rust_to_c(true, Packet::StartInterruptReceiving { id: 40, endpoint: 0x83 }, "start_interrupt_receiving");
-        byte_compare(false, c_encode, Packet::StartInterruptReceiving { id: 40, endpoint: 0x83 }, "start_interrupt_receiving");
+        c_to_rust(false, c_encode, |p| matches!(p, Packet::StartInterruptReceiving { id: 40, .. }), "start_interrupt_receiving");
+        rust_to_c(true, Packet::StartInterruptReceiving { id: 40, endpoint: Endpoint::new(0x83) }, "start_interrupt_receiving");
+        byte_compare(false, c_encode, Packet::StartInterruptReceiving { id: 40, endpoint: Endpoint::new(0x83) }, "start_interrupt_receiving");
     }
 }
 
@@ -821,9 +821,9 @@ fn interop_stop_interrupt_receiving() {
             let mut h = sys::usb_redir_stop_interrupt_receiving_header { endpoint: 0x83 };
             sys::usbredirparser_send_stop_interrupt_receiving(cp, 41, &mut h);
         }
-        c_to_rust(false, c_encode, |p| matches!(p, Packet::StopInterruptReceiving { id: 41, endpoint: 0x83, .. }), "stop_interrupt_receiving");
-        rust_to_c(true, Packet::StopInterruptReceiving { id: 41, endpoint: 0x83 }, "stop_interrupt_receiving");
-        byte_compare(false, c_encode, Packet::StopInterruptReceiving { id: 41, endpoint: 0x83 }, "stop_interrupt_receiving");
+        c_to_rust(false, c_encode, |p| matches!(p, Packet::StopInterruptReceiving { id: 41, .. }), "stop_interrupt_receiving");
+        rust_to_c(true, Packet::StopInterruptReceiving { id: 41, endpoint: Endpoint::new(0x83) }, "stop_interrupt_receiving");
+        byte_compare(false, c_encode, Packet::StopInterruptReceiving { id: 41, endpoint: Endpoint::new(0x83) }, "stop_interrupt_receiving");
     }
 }
 
@@ -834,9 +834,9 @@ fn interop_interrupt_receiving_status() {
             let mut h = sys::usb_redir_interrupt_receiving_status_header { status: 0, endpoint: 0x83 };
             sys::usbredirparser_send_interrupt_receiving_status(cp, 42, &mut h);
         }
-        c_to_rust(true, c_encode, |p| matches!(p, Packet::InterruptReceivingStatus { id: 42, endpoint: 0x83, .. }), "interrupt_receiving_status");
-        rust_to_c(false, Packet::InterruptReceivingStatus { id: 42, status: Status::Success, endpoint: 0x83 }, "interrupt_receiving_status");
-        byte_compare(true, c_encode, Packet::InterruptReceivingStatus { id: 42, status: Status::Success, endpoint: 0x83 }, "interrupt_receiving_status");
+        c_to_rust(true, c_encode, |p| matches!(p, Packet::InterruptReceivingStatus { id: 42, .. }), "interrupt_receiving_status");
+        rust_to_c(false, Packet::InterruptReceivingStatus { id: 42, status: Status::Success, endpoint: Endpoint::new(0x83) }, "interrupt_receiving_status");
+        byte_compare(true, c_encode, Packet::InterruptReceivingStatus { id: 42, status: Status::Success, endpoint: Endpoint::new(0x83) }, "interrupt_receiving_status");
     }
 }
 
@@ -906,9 +906,9 @@ fn interop_start_bulk_receiving() {
             };
             sys::usbredirparser_send_start_bulk_receiving(cp, 70, &mut h);
         }
-        c_to_rust(false, c_encode, |p| matches!(p, Packet::StartBulkReceiving { id: 70, endpoint: 0x82, .. }), "start_bulk_receiving");
-        rust_to_c(true, Packet::StartBulkReceiving { id: 70, stream_id: 1, bytes_per_transfer: 4096, endpoint: 0x82, no_transfers: 8 }, "start_bulk_receiving");
-        byte_compare(false, c_encode, Packet::StartBulkReceiving { id: 70, stream_id: 1, bytes_per_transfer: 4096, endpoint: 0x82, no_transfers: 8 }, "start_bulk_receiving");
+        c_to_rust(false, c_encode, |p| matches!(p, Packet::StartBulkReceiving { id: 70, .. }), "start_bulk_receiving");
+        rust_to_c(true, Packet::StartBulkReceiving { id: 70, stream_id: 1, bytes_per_transfer: 4096, endpoint: Endpoint::new(0x82), no_transfers: 8 }, "start_bulk_receiving");
+        byte_compare(false, c_encode, Packet::StartBulkReceiving { id: 70, stream_id: 1, bytes_per_transfer: 4096, endpoint: Endpoint::new(0x82), no_transfers: 8 }, "start_bulk_receiving");
     }
 }
 
@@ -919,9 +919,9 @@ fn interop_stop_bulk_receiving() {
             let mut h = sys::usb_redir_stop_bulk_receiving_header { stream_id: 1, endpoint: 0x82 };
             sys::usbredirparser_send_stop_bulk_receiving(cp, 71, &mut h);
         }
-        c_to_rust(false, c_encode, |p| matches!(p, Packet::StopBulkReceiving { id: 71, endpoint: 0x82, .. }), "stop_bulk_receiving");
-        rust_to_c(true, Packet::StopBulkReceiving { id: 71, stream_id: 1, endpoint: 0x82 }, "stop_bulk_receiving");
-        byte_compare(false, c_encode, Packet::StopBulkReceiving { id: 71, stream_id: 1, endpoint: 0x82 }, "stop_bulk_receiving");
+        c_to_rust(false, c_encode, |p| matches!(p, Packet::StopBulkReceiving { id: 71, .. }), "stop_bulk_receiving");
+        rust_to_c(true, Packet::StopBulkReceiving { id: 71, stream_id: 1, endpoint: Endpoint::new(0x82) }, "stop_bulk_receiving");
+        byte_compare(false, c_encode, Packet::StopBulkReceiving { id: 71, stream_id: 1, endpoint: Endpoint::new(0x82) }, "stop_bulk_receiving");
     }
 }
 
@@ -932,9 +932,9 @@ fn interop_bulk_receiving_status() {
             let mut h = sys::usb_redir_bulk_receiving_status_header { stream_id: 1, endpoint: 0x82, status: 0 };
             sys::usbredirparser_send_bulk_receiving_status(cp, 72, &mut h);
         }
-        c_to_rust(true, c_encode, |p| matches!(p, Packet::BulkReceivingStatus { id: 72, endpoint: 0x82, .. }), "bulk_receiving_status");
-        rust_to_c(false, Packet::BulkReceivingStatus { id: 72, stream_id: 1, endpoint: 0x82, status: Status::Success }, "bulk_receiving_status");
-        byte_compare(true, c_encode, Packet::BulkReceivingStatus { id: 72, stream_id: 1, endpoint: 0x82, status: Status::Success }, "bulk_receiving_status");
+        c_to_rust(true, c_encode, |p| matches!(p, Packet::BulkReceivingStatus { id: 72, .. }), "bulk_receiving_status");
+        rust_to_c(false, Packet::BulkReceivingStatus { id: 72, stream_id: 1, endpoint: Endpoint::new(0x82), status: Status::Success }, "bulk_receiving_status");
+        byte_compare(true, c_encode, Packet::BulkReceivingStatus { id: 72, stream_id: 1, endpoint: Endpoint::new(0x82), status: Status::Success }, "bulk_receiving_status");
     }
 }
 
@@ -953,7 +953,7 @@ fn interop_control_packet() {
             sys::usbredirparser_send_control_packet(cp, 80, &mut h, data.as_mut_ptr(), 3);
         }
         let pkt = Packet::ControlPacket {
-            id: 80, endpoint: 0x00, request: 0x09, requesttype: 0x00,
+            id: 80, endpoint: Endpoint::new(0x00), request: 0x09, requesttype: 0x00,
             status: Status::Success, value: 0x0001, index: 0, length: 3,
             data: Bytes::from_static(&[0xAA, 0xBB, 0xCC]),
         };
@@ -979,7 +979,7 @@ fn interop_bulk_packet() {
             sys::usbredirparser_send_bulk_packet(cp, 90, &mut h, data.as_mut_ptr(), 4);
         }
         let pkt = Packet::BulkPacket {
-            id: 90, endpoint: 0x02, status: Status::Success,
+            id: 90, endpoint: Endpoint::new(0x02), status: Status::Success,
             length: 4, stream_id: 0, data: Bytes::from_static(&[1, 2, 3, 4]),
         };
         // C(guest) → Rust(host)
@@ -1004,7 +1004,7 @@ fn interop_iso_packet() {
             sys::usbredirparser_send_iso_packet(cp, 91, &mut h, data.as_mut_ptr(), 2);
         }
         let pkt = Packet::IsoPacket {
-            id: 91, endpoint: 0x81, status: Status::Success,
+            id: 91, endpoint: Endpoint::new(0x81), status: Status::Success,
             length: 2, data: Bytes::from_static(&[0xDE, 0xAD]),
         };
         // C(host) → Rust(guest)
@@ -1029,7 +1029,7 @@ fn interop_interrupt_packet() {
             sys::usbredirparser_send_interrupt_packet(cp, 92, &mut h, data.as_mut_ptr(), 1);
         }
         let pkt = Packet::InterruptPacket {
-            id: 92, endpoint: 0x83, status: Status::Success,
+            id: 92, endpoint: Endpoint::new(0x83), status: Status::Success,
             length: 1, data: Bytes::from_static(&[0xFF]),
         };
         // C(host) → Rust(guest)
@@ -1053,7 +1053,7 @@ fn interop_buffered_bulk_packet() {
             sys::usbredirparser_send_buffered_bulk_packet(cp, 93, &mut h, data.as_mut_ptr(), 3);
         }
         let pkt = Packet::BufferedBulkPacket {
-            id: 93, stream_id: 5, length: 3, endpoint: 0x82,
+            id: 93, stream_id: 5, length: 3, endpoint: Endpoint::new(0x82),
             status: Status::Success, data: Bytes::from_static(&[10, 20, 30]),
         };
         // C(host) → Rust(guest)
@@ -1513,7 +1513,7 @@ fn interop_compat_16bit_bulk_length() {
         let (cp2, mut rp2) = connected_pair_with_caps(true, &mut c_caps, r_caps);
         rp2.send(Packet::BulkPacket {
             id: 100,
-            endpoint: 0x02,
+            endpoint: Endpoint::new(0x02),
             status: Status::Success,
             length: 4,
             stream_id: 0,
@@ -1673,13 +1673,13 @@ fn verify_interrupt_receiving_non_input_ep() {
     // Endpoint 0x02 = OUT, should be rejected (interrupt receiving requires IN endpoint)
     let result = rp.send(Packet::StartInterruptReceiving {
         id: 1,
-        endpoint: 0x02,
+        endpoint: Endpoint::new(0x02),
     });
     assert!(result.is_err(), "Should reject non-input endpoint for start_interrupt_receiving");
 
     let result = rp.send(Packet::StopInterruptReceiving {
         id: 2,
-        endpoint: 0x02,
+        endpoint: Endpoint::new(0x02),
     });
     assert!(result.is_err(), "Should reject non-input endpoint for stop_interrupt_receiving");
 }
@@ -1696,7 +1696,7 @@ fn verify_bulk_receiving_non_input_ep() {
         id: 1,
         stream_id: 0,
         bytes_per_transfer: 4096,
-        endpoint: 0x02, // OUT, should fail
+        endpoint: Endpoint::new(0x02), // OUT, should fail
         no_transfers: 4,
     });
     assert!(result.is_err(), "Should reject non-input endpoint for start_bulk_receiving");
@@ -1714,7 +1714,7 @@ fn verify_bulk_transfer_too_large() {
         id: 1,
         stream_id: 0,
         bytes_per_transfer: 256 * 1024 * 1024, // exceeds MAX_BULK_TRANSFER_SIZE
-        endpoint: 0x82,
+        endpoint: Endpoint::new(0x82),
         no_transfers: 4,
     });
     assert!(result.is_err(), "Should reject oversized bulk transfer");
@@ -1763,7 +1763,7 @@ fn verify_data_packet_wrong_direction() {
     // ISO with no data in wrong direction → rejected
     let result = rp.send(Packet::IsoPacket {
         id: 1,
-        endpoint: 0x81, // IN endpoint
+        endpoint: Endpoint::new(0x81), // IN endpoint
         status: Status::Success,
         length: 0,
         data: Bytes::new(),

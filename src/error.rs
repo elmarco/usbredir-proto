@@ -1,4 +1,5 @@
 use crate::caps::Cap;
+use crate::proto::Endpoint;
 
 /// Errors returned by the parser during packet encoding, decoding, or verification.
 #[derive(Debug, thiserror::Error)]
@@ -14,8 +15,8 @@ pub enum Error {
     DataLengthMismatch { data_len: usize, header_len: u32 },
     #[error("missing capability: {cap:?}")]
     MissingCapability { cap: Cap },
-    #[error("wrong direction for endpoint: {endpoint:#04x}")]
-    WrongDirection { endpoint: u8 },
+    #[error("wrong direction for endpoint: {endpoint}")]
+    WrongDirection { endpoint: Endpoint },
     #[error("bulk transfer too large: length={length}, max={max}")]
     BulkTransferTooLarge { length: u32, max: u32 },
     #[error("duplicate hello packet")]
@@ -30,8 +31,8 @@ pub enum Error {
     Deserialize(String),
     #[error("wrong direction packet")]
     WrongDirectionPacket,
-    #[error("non-input endpoint for receiving: {endpoint:#04x}")]
-    NonInputEndpoint { endpoint: u8 },
+    #[error("non-input endpoint for receiving: {endpoint}")]
+    NonInputEndpoint { endpoint: Endpoint },
     #[error("filter error: {0}")]
     Filter(#[from] FilterError),
 }

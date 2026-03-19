@@ -128,6 +128,72 @@ impl TryFrom<u8> for TransferType {
     }
 }
 
+/// A USB endpoint address, encoding both number (0–15) and direction (IN/OUT).
+///
+/// Bit 7 indicates direction: set = IN (device-to-host), clear = OUT (host-to-device).
+/// Bits 0–3 are the endpoint number.
+///
+/// ```
+/// # use usbredir_proto::Endpoint;
+/// let ep = Endpoint::new(0x81);
+/// assert!(ep.is_input());
+/// assert_eq!(ep.number(), 1);
+/// assert_eq!(ep.raw(), 0x81);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Endpoint(u8);
+
+impl Endpoint {
+    /// Create an endpoint from a raw USB endpoint address byte.
+    #[must_use]
+    pub const fn new(raw: u8) -> Self {
+        Self(raw)
+    }
+
+    /// The raw endpoint address byte.
+    #[must_use]
+    pub const fn raw(self) -> u8 {
+        self.0
+    }
+
+    /// The endpoint number (bits 0–3).
+    #[must_use]
+    pub const fn number(self) -> u8 {
+        self.0 & 0x0F
+    }
+
+    /// Returns `true` if this is an IN endpoint (device-to-host).
+    #[must_use]
+    pub const fn is_input(self) -> bool {
+        self.0 & 0x80 != 0
+    }
+
+    /// Returns `true` if this is an OUT endpoint (host-to-device).
+    #[must_use]
+    pub const fn is_output(self) -> bool {
+        self.0 & 0x80 == 0
+    }
+}
+
+impl From<u8> for Endpoint {
+    fn from(v: u8) -> Self {
+        Self(v)
+    }
+}
+
+impl From<Endpoint> for u8 {
+    fn from(ep: Endpoint) -> Self {
+        ep.0
+    }
+}
+
+impl std::fmt::Display for Endpoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let dir = if self.is_input() { "IN" } else { "OUT" };
+        write!(f, "ep{} {dir}", self.number())
+    }
+}
+
 /// USB device speed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]

@@ -8,7 +8,7 @@ use crate::error::{Error, Result};
 use crate::filter;
 use crate::packet::Packet;
 use crate::proto::pkt_type;
-use crate::proto::{Speed, Status, TransferType, MAX_PACKET_SIZE};
+use crate::proto::{Endpoint, Speed, Status, TransferType, MAX_PACKET_SIZE};
 use crate::wire;
 
 /// Configuration for constructing a [`Parser`].
@@ -604,7 +604,7 @@ impl Parser {
             Packet::StartInterruptReceiving { endpoint, .. }
             | Packet::StopInterruptReceiving { endpoint, .. }
             | Packet::InterruptReceivingStatus { endpoint, .. } => {
-                if *endpoint & 0x80 == 0 {
+                if endpoint.is_output() {
                     return Err(Error::NonInputEndpoint { endpoint: *endpoint });
                 }
             }
@@ -642,19 +642,19 @@ impl Parser {
                         max: crate::proto::MAX_BULK_TRANSFER_SIZE,
                     });
                 }
-                if *endpoint & 0x80 == 0 {
+                if endpoint.is_output() {
                     return Err(Error::NonInputEndpoint { endpoint: *endpoint });
                 }
             }
             Packet::StopBulkReceiving { endpoint, .. } => {
                 self.verify_bulk_recv_cap(sending)?;
-                if *endpoint & 0x80 == 0 {
+                if endpoint.is_output() {
                     return Err(Error::NonInputEndpoint { endpoint: *endpoint });
                 }
             }
             Packet::BulkReceivingStatus { endpoint, .. } => {
                 self.verify_bulk_recv_cap(sending)?;
-                if *endpoint & 0x80 == 0 {
+                if endpoint.is_output() {
                     return Err(Error::NonInputEndpoint { endpoint: *endpoint });
                 }
             }
@@ -665,7 +665,7 @@ impl Parser {
                 ..
             } => {
                 self.verify_data_packet_direction(
-                    *endpoint,
+                    endpoint,
                     command_for_host,
                     *length as usize,
                     data.len(),
@@ -685,7 +685,7 @@ impl Parser {
                     });
                 }
                 self.verify_data_packet_direction(
-                    *endpoint,
+                    endpoint,
                     command_for_host,
                     *length as usize,
                     data.len(),
@@ -699,7 +699,7 @@ impl Parser {
                 ..
             } => {
                 self.verify_data_packet_direction(
-                    *endpoint,
+                    endpoint,
                     command_for_host,
                     *length as usize,
                     data.len(),
@@ -713,7 +713,7 @@ impl Parser {
                 ..
             } => {
                 self.verify_data_packet_direction(
-                    *endpoint,
+                    endpoint,
                     command_for_host,
                     *length as usize,
                     data.len(),
@@ -734,7 +734,7 @@ impl Parser {
                     });
                 }
                 self.verify_data_packet_direction(
-                    *endpoint,
+                    endpoint,
                     command_for_host,
                     *length as usize,
                     data.len(),
@@ -769,14 +769,14 @@ impl Parser {
     /// - Otherwise: no data expected (and some types reject this outright)
     fn verify_data_packet_direction(
         &self,
-        endpoint: u8,
+        endpoint: &Endpoint,
         command_for_host: bool,
         header_length: usize,
         data_len: usize,
         pkt_type: u32,
     ) -> Result<()> {
-        let expect_data = ((endpoint & 0x80) != 0 && !command_for_host)
-            || ((endpoint & 0x80) == 0 && command_for_host);
+        let expect_data = (endpoint.is_input() && !command_for_host)
+            || (endpoint.is_output() && command_for_host);
 
         if expect_data {
             if data_len != header_length {
@@ -787,20 +787,20 @@ impl Parser {
             }
         } else {
             if data_len != 0 {
-                return Err(Error::WrongDirection { endpoint });
+                return Err(Error::WrongDirection { endpoint: *endpoint });
             }
             // Some types unconditionally reject wrong-direction
             match pkt_type {
                 pkt_type::ISO_PACKET => {
-                    return Err(Error::WrongDirection { endpoint });
+                    return Err(Error::WrongDirection { endpoint: *endpoint });
                 }
                 pkt_type::INTERRUPT_PACKET => {
                     if command_for_host {
-                        return Err(Error::WrongDirection { endpoint });
+                        return Err(Error::WrongDirection { endpoint: *endpoint });
                     }
                 }
                 pkt_type::BUFFERED_BULK_PACKET => {
-                    return Err(Error::WrongDirection { endpoint });
+                    return Err(Error::WrongDirection { endpoint: *endpoint });
                 }
                 _ => {}
             }
@@ -957,7 +957,7 @@ impl Parser {
                     .map_err(|_| Error::Deserialize("start iso".into()))?;
                 Ok(Packet::StartIsoStream {
                     id,
-                    endpoint: hdr.endpoint,
+                    endpoint: Endpoint::new(hdr.endpoint),
                     pkts_per_urb: hdr.pkts_per_urb,
                     no_urbs: hdr.no_urbs,
                 })
@@ -967,7 +967,7 @@ impl Parser {
                     .map_err(|_| Error::Deserialize("stop iso".into()))?;
                 Ok(Packet::StopIsoStream {
                     id,
-                    endpoint: hdr.endpoint,
+                    endpoint: Endpoint::new(hdr.endpoint),
                 })
             }
             pkt_type::ISO_STREAM_STATUS => {
@@ -976,7 +976,7 @@ impl Parser {
                 Ok(Packet::IsoStreamStatus {
                     id,
                     status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
-                    endpoint: hdr.endpoint,
+                    endpoint: Endpoint::new(hdr.endpoint),
                 })
             }
             pkt_type::START_INTERRUPT_RECEIVING => {
@@ -984,7 +984,7 @@ impl Parser {
                     .map_err(|_| Error::Deserialize("start int recv".into()))?;
                 Ok(Packet::StartInterruptReceiving {
                     id,
-                    endpoint: hdr.endpoint,
+                    endpoint: Endpoint::new(hdr.endpoint),
                 })
             }
             pkt_type::STOP_INTERRUPT_RECEIVING => {
@@ -992,7 +992,7 @@ impl Parser {
                     .map_err(|_| Error::Deserialize("stop int recv".into()))?;
                 Ok(Packet::StopInterruptReceiving {
                     id,
-                    endpoint: hdr.endpoint,
+                    endpoint: Endpoint::new(hdr.endpoint),
                 })
             }
             pkt_type::INTERRUPT_RECEIVING_STATUS => {
@@ -1001,7 +1001,7 @@ impl Parser {
                 Ok(Packet::InterruptReceivingStatus {
                     id,
                     status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
-                    endpoint: hdr.endpoint,
+                    endpoint: Endpoint::new(hdr.endpoint),
                 })
             }
             pkt_type::ALLOC_BULK_STREAMS => {
@@ -1052,7 +1052,7 @@ impl Parser {
                     id,
                     stream_id: hdr.stream_id.get(),
                     bytes_per_transfer: hdr.bytes_per_transfer.get(),
-                    endpoint: hdr.endpoint,
+                    endpoint: Endpoint::new(hdr.endpoint),
                     no_transfers: hdr.no_transfers,
                 })
             }
@@ -1062,7 +1062,7 @@ impl Parser {
                 Ok(Packet::StopBulkReceiving {
                     id,
                     stream_id: hdr.stream_id.get(),
-                    endpoint: hdr.endpoint,
+                    endpoint: Endpoint::new(hdr.endpoint),
                 })
             }
             pkt_type::BULK_RECEIVING_STATUS => {
@@ -1071,7 +1071,7 @@ impl Parser {
                 Ok(Packet::BulkReceivingStatus {
                     id,
                     stream_id: hdr.stream_id.get(),
-                    endpoint: hdr.endpoint,
+                    endpoint: Endpoint::new(hdr.endpoint),
                     status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
                 })
             }
@@ -1080,7 +1080,7 @@ impl Parser {
                     .map_err(|_| Error::Deserialize("control pkt".into()))?;
                 Ok(Packet::ControlPacket {
                     id,
-                    endpoint: hdr.endpoint,
+                    endpoint: Endpoint::new(hdr.endpoint),
                     request: hdr.request,
                     requesttype: hdr.requesttype,
                     status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
@@ -1098,7 +1098,7 @@ impl Parser {
                         ((hdr.length_high.get() as u32) << 16) | (hdr.length.get() as u32);
                     Ok(Packet::BulkPacket {
                         id,
-                        endpoint: hdr.endpoint,
+                        endpoint: Endpoint::new(hdr.endpoint),
                         status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
                         length,
                         stream_id: hdr.stream_id.get(),
@@ -1109,7 +1109,7 @@ impl Parser {
                         .map_err(|_| Error::Deserialize("bulk pkt 16".into()))?;
                     Ok(Packet::BulkPacket {
                         id,
-                        endpoint: hdr.endpoint,
+                        endpoint: Endpoint::new(hdr.endpoint),
                         status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
                         length: hdr.length.get() as u32,
                         stream_id: hdr.stream_id.get(),
@@ -1122,7 +1122,7 @@ impl Parser {
                     .map_err(|_| Error::Deserialize("iso pkt".into()))?;
                 Ok(Packet::IsoPacket {
                     id,
-                    endpoint: hdr.endpoint,
+                    endpoint: Endpoint::new(hdr.endpoint),
                     status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
                     length: hdr.length.get(),
                     data: Bytes::copy_from_slice(data),
@@ -1133,7 +1133,7 @@ impl Parser {
                     .map_err(|_| Error::Deserialize("interrupt pkt".into()))?;
                 Ok(Packet::InterruptPacket {
                     id,
-                    endpoint: hdr.endpoint,
+                    endpoint: Endpoint::new(hdr.endpoint),
                     status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
                     length: hdr.length.get(),
                     data: Bytes::copy_from_slice(data),
@@ -1146,7 +1146,7 @@ impl Parser {
                     id,
                     stream_id: hdr.stream_id.get(),
                     length: hdr.length.get(),
-                    endpoint: hdr.endpoint,
+                    endpoint: Endpoint::new(hdr.endpoint),
                     status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
                     data: Bytes::copy_from_slice(data),
                 })
@@ -1356,14 +1356,14 @@ impl Parser {
                 ..
             } => {
                 write_hdr!(wire::StartIsoStreamHeader {
-                    endpoint: *endpoint,
+                    endpoint: endpoint.raw(),
                     pkts_per_urb: *pkts_per_urb,
                     no_urbs: *no_urbs,
                 });
             }
             Packet::StopIsoStream { endpoint, .. } => {
                 write_hdr!(wire::StopIsoStreamHeader {
-                    endpoint: *endpoint,
+                    endpoint: endpoint.raw(),
                 });
             }
             Packet::IsoStreamStatus {
@@ -1371,17 +1371,17 @@ impl Parser {
             } => {
                 write_hdr!(wire::IsoStreamStatusHeader {
                     status: *status as u8,
-                    endpoint: *endpoint,
+                    endpoint: endpoint.raw(),
                 });
             }
             Packet::StartInterruptReceiving { endpoint, .. } => {
                 write_hdr!(wire::StartInterruptReceivingHeader {
-                    endpoint: *endpoint,
+                    endpoint: endpoint.raw(),
                 });
             }
             Packet::StopInterruptReceiving { endpoint, .. } => {
                 write_hdr!(wire::StopInterruptReceivingHeader {
-                    endpoint: *endpoint,
+                    endpoint: endpoint.raw(),
                 });
             }
             Packet::InterruptReceivingStatus {
@@ -1389,7 +1389,7 @@ impl Parser {
             } => {
                 write_hdr!(wire::InterruptReceivingStatusHeader {
                     status: *status as u8,
-                    endpoint: *endpoint,
+                    endpoint: endpoint.raw(),
                 });
             }
             Packet::AllocBulkStreams {
@@ -1439,7 +1439,7 @@ impl Parser {
                 write_hdr!(wire::StartBulkReceivingHeader {
                     stream_id: (*stream_id).into(),
                     bytes_per_transfer: (*bytes_per_transfer).into(),
-                    endpoint: *endpoint,
+                    endpoint: endpoint.raw(),
                     no_transfers: *no_transfers,
                 });
             }
@@ -1450,7 +1450,7 @@ impl Parser {
             } => {
                 write_hdr!(wire::StopBulkReceivingHeader {
                     stream_id: (*stream_id).into(),
-                    endpoint: *endpoint,
+                    endpoint: endpoint.raw(),
                 });
             }
             Packet::BulkReceivingStatus {
@@ -1461,7 +1461,7 @@ impl Parser {
             } => {
                 write_hdr!(wire::BulkReceivingStatusHeader {
                     stream_id: (*stream_id).into(),
-                    endpoint: *endpoint,
+                    endpoint: endpoint.raw(),
                     status: *status as u8,
                 });
             }
@@ -1477,7 +1477,7 @@ impl Parser {
                 ..
             } => {
                 write_hdr!(wire::ControlPacketHeader {
-                    endpoint: *endpoint,
+                    endpoint: endpoint.raw(),
                     request: *request,
                     requesttype: *requesttype,
                     status: *status as u8,
@@ -1497,7 +1497,7 @@ impl Parser {
             } => {
                 if self.negotiated(Cap::BulkLength32Bits) {
                     write_hdr!(wire::BulkPacketHeader {
-                        endpoint: *endpoint,
+                        endpoint: endpoint.raw(),
                         status: *status as u8,
                         length: (*length as u16).into(),
                         stream_id: (*stream_id).into(),
@@ -1505,7 +1505,7 @@ impl Parser {
                     });
                 } else {
                     write_hdr!(wire::BulkPacketHeader16BitLength {
-                        endpoint: *endpoint,
+                        endpoint: endpoint.raw(),
                         status: *status as u8,
                         length: (*length as u16).into(),
                         stream_id: (*stream_id).into(),
@@ -1521,7 +1521,7 @@ impl Parser {
                 ..
             } => {
                 write_hdr!(wire::IsoPacketHeader {
-                    endpoint: *endpoint,
+                    endpoint: endpoint.raw(),
                     status: *status as u8,
                     length: (*length).into(),
                 });
@@ -1535,7 +1535,7 @@ impl Parser {
                 ..
             } => {
                 write_hdr!(wire::InterruptPacketHeader {
-                    endpoint: *endpoint,
+                    endpoint: endpoint.raw(),
                     status: *status as u8,
                     length: (*length).into(),
                 });
@@ -1552,7 +1552,7 @@ impl Parser {
                 write_hdr!(wire::BufferedBulkPacketHeader {
                     stream_id: (*stream_id).into(),
                     length: (*length).into(),
-                    endpoint: *endpoint,
+                    endpoint: endpoint.raw(),
                     status: *status as u8,
                 });
                 buf.extend_from_slice(pdata);
