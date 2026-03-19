@@ -99,7 +99,7 @@ pub enum LogLevel {
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Event {
-    Packet(Packet),
+    Packet(Box<Packet>),
     ParseError(Error),
     Log { level: LogLevel, message: String },
 }
@@ -576,7 +576,7 @@ impl Parser {
                                     });
                                 }
                             }
-                            self.events.push_back(Event::Packet(packet));
+                            self.events.push_back(Event::Packet(Box::new(packet)));
                         }
                         Err(e) => {
                             self.events.push_back(Event::ParseError(e));
@@ -1675,10 +1675,12 @@ mod tests {
         // Guest should emit a Log (peer info) + the hello Packet
         let mut got_hello = false;
         while let Some(event) = guest.poll() {
-            if let Event::Packet(Packet::Hello { version, caps }) = event {
-                assert!(version.starts_with("test"));
-                assert!(caps.has(Cap::Ids64Bits));
-                got_hello = true;
+            if let Event::Packet(packet) = event {
+                if let Packet::Hello { version, caps } = *packet {
+                    assert!(version.starts_with("test"));
+                    assert!(caps.has(Cap::Ids64Bits));
+                    got_hello = true;
+                }
             }
         }
         assert!(got_hello);
@@ -1698,8 +1700,10 @@ mod tests {
 
         let mut got_hello = false;
         while let Some(event) = guest.poll() {
-            if let Event::Packet(Packet::Hello { .. }) = event {
-                got_hello = true;
+            if let Event::Packet(packet) = event {
+                if let Packet::Hello { .. } = *packet {
+                    got_hello = true;
+                }
             }
         }
         assert!(got_hello);
@@ -1735,13 +1739,15 @@ mod tests {
 
         let mut found = false;
         while let Some(event) = host.poll() {
-            if let Event::Packet(Packet::SetConfiguration {
-                id, configuration, ..
-            }) = event
-            {
-                assert_eq!(id, 42);
-                assert_eq!(configuration, 1);
-                found = true;
+            if let Event::Packet(packet) = event {
+                if let Packet::SetConfiguration {
+                    id, configuration, ..
+                } = *packet
+                {
+                    assert_eq!(id, 42);
+                    assert_eq!(configuration, 1);
+                    found = true;
+                }
             }
         }
         assert!(found);
