@@ -25,6 +25,7 @@ pub struct Caps {
 }
 
 impl Caps {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -34,15 +35,18 @@ impl Caps {
         self.bits[(idx / 32) as usize] |= 1 << (idx % 32);
     }
 
+    #[must_use]
     pub fn has(&self, cap: Cap) -> bool {
         let idx = cap as u32;
         (self.bits[(idx / 32) as usize] & (1 << (idx % 32))) != 0
     }
 
+    #[must_use]
     pub fn negotiated(&self, peer: &Caps, cap: Cap) -> bool {
         self.has(cap) && peer.has(cap)
     }
 
+    #[must_use]
     pub fn from_le_bytes(data: &[u8]) -> Self {
         let mut caps = Self::default();
         let len = data.len().min(CAPS_SIZE * 4);
@@ -58,6 +62,7 @@ impl Caps {
         caps
     }
 
+    #[must_use]
     pub fn to_le_bytes(&self) -> [u8; CAPS_SIZE * 4] {
         let mut out = [0u8; CAPS_SIZE * 4];
         for (i, word) in self.bits.iter().enumerate() {
@@ -67,10 +72,12 @@ impl Caps {
         out
     }
 
+    #[must_use]
     pub fn raw_bits(&self) -> &[u32; CAPS_SIZE] {
         &self.bits
     }
 
+    #[must_use]
     pub fn from_raw_bits(bits: [u32; CAPS_SIZE]) -> Self {
         Self { bits }
     }
@@ -84,6 +91,7 @@ impl Caps {
     }
 
     /// Check if a subset of `other` caps (i.e., `self` has no caps that `other` doesn't)
+    #[must_use]
     pub fn is_subset_of(&self, other: &Caps) -> bool {
         for i in 0..CAPS_SIZE {
             if self.bits[i] & !other.bits[i] != 0 {

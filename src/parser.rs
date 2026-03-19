@@ -12,16 +12,80 @@ use crate::proto::{Speed, Status, TransferType, MAX_PACKET_SIZE};
 use crate::wire;
 
 /// Configuration for constructing a [`Parser`].
+///
+/// Use struct literal syntax or the builder methods:
+/// ```
+/// # use usbredir_proto::{ParserConfig, Caps, Cap};
+/// let config = ParserConfig::new("my-app 1.0")
+///     .is_host(true)
+///     .cap(Cap::Ids64Bits);
+/// ```
 #[derive(Debug, Clone)]
 pub struct ParserConfig {
+    /// Version string sent in the Hello packet.
     pub version: String,
+    /// Our advertised capabilities.
     pub caps: Caps,
+    /// Whether this parser represents the USB host side.
     pub is_host: bool,
+    /// If true, suppress the automatic Hello packet on construction.
     pub no_hello: bool,
+}
+
+impl Default for ParserConfig {
+    fn default() -> Self {
+        Self {
+            version: String::new(),
+            caps: Caps::new(),
+            is_host: false,
+            no_hello: false,
+        }
+    }
+}
+
+impl ParserConfig {
+    /// Create a config with the given version string and defaults
+    /// (guest side, all caps disabled, hello enabled).
+    #[must_use]
+    pub fn new(version: impl Into<String>) -> Self {
+        Self {
+            version: version.into(),
+            ..Self::default()
+        }
+    }
+
+    /// Set whether this is the USB host side.
+    #[must_use]
+    pub fn is_host(mut self, is_host: bool) -> Self {
+        self.is_host = is_host;
+        self
+    }
+
+    /// Enable a capability.
+    #[must_use]
+    pub fn cap(mut self, cap: Cap) -> Self {
+        self.caps.set(cap);
+        self
+    }
+
+    /// Set the full capabilities bitset.
+    #[must_use]
+    pub fn caps(mut self, caps: Caps) -> Self {
+        self.caps = caps;
+        self
+    }
+
+    /// Suppress the automatic Hello packet on construction.
+    #[must_use]
+    pub fn no_hello(mut self, no_hello: bool) -> Self {
+        self.no_hello = no_hello;
+        self
+    }
 }
 
 /// Severity level for log messages emitted by the parser.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum LogLevel {
     Error,
     Warning,
@@ -31,6 +95,7 @@ pub enum LogLevel {
 
 /// An event produced by [`Parser::poll()`] or [`Parser::events()`].
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Event {
     Packet(Packet),
     ParseError(Error),

@@ -138,26 +138,28 @@ pub fn rules_to_string(
     let tsep = token_sep.chars().next().unwrap();
     let rsep = rule_sep.chars().next().unwrap();
 
+    use std::fmt::Write;
+
     let mut s = String::new();
     for (i, rule) in rules.iter().enumerate() {
         if i > 0 {
             s.push(rsep);
         }
         match rule.device_class {
-            Some(c) => s.push_str(&format!("0x{:02x}{}", c, tsep)),
-            None => s.push_str(&format!("-1{}", tsep)),
+            Some(c) => write!(s, "0x{c:02x}{tsep}").unwrap(),
+            None => write!(s, "-1{tsep}").unwrap(),
         }
         match rule.vendor_id {
-            Some(v) => s.push_str(&format!("0x{:04x}{}", v, tsep)),
-            None => s.push_str(&format!("-1{}", tsep)),
+            Some(v) => write!(s, "0x{v:04x}{tsep}").unwrap(),
+            None => write!(s, "-1{tsep}").unwrap(),
         }
         match rule.product_id {
-            Some(p) => s.push_str(&format!("0x{:04x}{}", p, tsep)),
-            None => s.push_str(&format!("-1{}", tsep)),
+            Some(p) => write!(s, "0x{p:04x}{tsep}").unwrap(),
+            None => write!(s, "-1{tsep}").unwrap(),
         }
         match rule.device_version_bcd {
-            Some(d) => s.push_str(&format!("0x{:04x}{}", d, tsep)),
-            None => s.push_str(&format!("-1{}", tsep)),
+            Some(d) => write!(s, "0x{d:04x}{tsep}").unwrap(),
+            None => write!(s, "-1{tsep}").unwrap(),
         }
         s.push_str(if rule.allow { "1" } else { "0" });
     }

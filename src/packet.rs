@@ -10,6 +10,7 @@ use crate::proto::{Speed, Status, TransferType};
 /// Variants with `id` carry a request/response correlation identifier.
 /// Data packet variants additionally carry a `data: Bytes` payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Packet {
     // No id
     Hello {
@@ -186,7 +187,97 @@ pub enum Packet {
     },
 }
 
+impl std::fmt::Display for Packet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Packet::Hello { version, .. } => write!(f, "Hello(version={version:?})"),
+            Packet::DeviceConnect { speed, vendor_id, product_id, .. } => {
+                write!(f, "DeviceConnect(speed={speed:?}, vid={vendor_id:#06x}, pid={product_id:#06x})")
+            }
+            Packet::DeviceDisconnect => write!(f, "DeviceDisconnect"),
+            Packet::InterfaceInfo { interface_count, .. } => {
+                write!(f, "InterfaceInfo(count={interface_count})")
+            }
+            Packet::EpInfo { .. } => write!(f, "EpInfo"),
+            Packet::FilterReject => write!(f, "FilterReject"),
+            Packet::FilterFilter { rules } => write!(f, "FilterFilter(rules={})", rules.len()),
+            Packet::DeviceDisconnectAck => write!(f, "DeviceDisconnectAck"),
+            Packet::Reset { id } => write!(f, "Reset(id={id})"),
+            Packet::SetConfiguration { id, configuration } => {
+                write!(f, "SetConfiguration(id={id}, config={configuration})")
+            }
+            Packet::GetConfiguration { id } => write!(f, "GetConfiguration(id={id})"),
+            Packet::ConfigurationStatus { id, status, configuration } => {
+                write!(f, "ConfigurationStatus(id={id}, status={status:?}, config={configuration})")
+            }
+            Packet::SetAltSetting { id, interface, alt } => {
+                write!(f, "SetAltSetting(id={id}, iface={interface}, alt={alt})")
+            }
+            Packet::GetAltSetting { id, interface } => {
+                write!(f, "GetAltSetting(id={id}, iface={interface})")
+            }
+            Packet::AltSettingStatus { id, status, interface, alt } => {
+                write!(f, "AltSettingStatus(id={id}, status={status:?}, iface={interface}, alt={alt})")
+            }
+            Packet::StartIsoStream { id, endpoint, .. } => {
+                write!(f, "StartIsoStream(id={id}, ep={endpoint:#04x})")
+            }
+            Packet::StopIsoStream { id, endpoint } => {
+                write!(f, "StopIsoStream(id={id}, ep={endpoint:#04x})")
+            }
+            Packet::IsoStreamStatus { id, status, endpoint } => {
+                write!(f, "IsoStreamStatus(id={id}, status={status:?}, ep={endpoint:#04x})")
+            }
+            Packet::StartInterruptReceiving { id, endpoint } => {
+                write!(f, "StartInterruptReceiving(id={id}, ep={endpoint:#04x})")
+            }
+            Packet::StopInterruptReceiving { id, endpoint } => {
+                write!(f, "StopInterruptReceiving(id={id}, ep={endpoint:#04x})")
+            }
+            Packet::InterruptReceivingStatus { id, status, endpoint } => {
+                write!(f, "InterruptReceivingStatus(id={id}, status={status:?}, ep={endpoint:#04x})")
+            }
+            Packet::AllocBulkStreams { id, endpoints, no_streams } => {
+                write!(f, "AllocBulkStreams(id={id}, eps={endpoints:#x}, streams={no_streams})")
+            }
+            Packet::FreeBulkStreams { id, endpoints } => {
+                write!(f, "FreeBulkStreams(id={id}, eps={endpoints:#x})")
+            }
+            Packet::BulkStreamsStatus { id, status, endpoints, no_streams } => {
+                write!(f, "BulkStreamsStatus(id={id}, status={status:?}, eps={endpoints:#x}, streams={no_streams})")
+            }
+            Packet::CancelDataPacket { id } => write!(f, "CancelDataPacket(id={id})"),
+            Packet::StartBulkReceiving { id, endpoint, stream_id, .. } => {
+                write!(f, "StartBulkReceiving(id={id}, ep={endpoint:#04x}, stream={stream_id})")
+            }
+            Packet::StopBulkReceiving { id, endpoint, stream_id } => {
+                write!(f, "StopBulkReceiving(id={id}, ep={endpoint:#04x}, stream={stream_id})")
+            }
+            Packet::BulkReceivingStatus { id, status, endpoint, stream_id } => {
+                write!(f, "BulkReceivingStatus(id={id}, status={status:?}, ep={endpoint:#04x}, stream={stream_id})")
+            }
+            Packet::ControlPacket { id, endpoint, status, data, .. } => {
+                write!(f, "ControlPacket(id={id}, ep={endpoint:#04x}, status={status:?}, data={}B)", data.len())
+            }
+            Packet::BulkPacket { id, endpoint, status, data, .. } => {
+                write!(f, "BulkPacket(id={id}, ep={endpoint:#04x}, status={status:?}, data={}B)", data.len())
+            }
+            Packet::IsoPacket { id, endpoint, status, data, .. } => {
+                write!(f, "IsoPacket(id={id}, ep={endpoint:#04x}, status={status:?}, data={}B)", data.len())
+            }
+            Packet::InterruptPacket { id, endpoint, status, data, .. } => {
+                write!(f, "InterruptPacket(id={id}, ep={endpoint:#04x}, status={status:?}, data={}B)", data.len())
+            }
+            Packet::BufferedBulkPacket { id, endpoint, status, data, .. } => {
+                write!(f, "BufferedBulkPacket(id={id}, ep={endpoint:#04x}, status={status:?}, data={}B)", data.len())
+            }
+        }
+    }
+}
+
 impl Packet {
+    /// Returns the wire packet type ID for this variant.
+    #[must_use]
     pub fn packet_type(&self) -> u32 {
         use crate::proto::pkt_type::*;
         match self {
@@ -226,6 +317,8 @@ impl Packet {
         }
     }
 
+    /// Returns the packet's correlation ID (0 for connectionwide messages).
+    #[must_use]
     pub fn id(&self) -> u64 {
         match self {
             Packet::Hello { .. }

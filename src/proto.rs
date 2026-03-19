@@ -47,6 +47,7 @@ pub mod pkt_type {
 
 /// USB transfer completion status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 #[repr(u8)]
 pub enum Status {
     Success = 0,
@@ -56,6 +57,20 @@ pub enum Status {
     Stall = 4,
     Timeout = 5,
     Babble = 6,
+}
+
+impl std::fmt::Display for Status {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Success => "success",
+            Self::Cancelled => "cancelled",
+            Self::Inval => "invalid",
+            Self::IoError => "io-error",
+            Self::Stall => "stall",
+            Self::Timeout => "timeout",
+            Self::Babble => "babble",
+        })
+    }
 }
 
 impl TryFrom<u8> for Status {
@@ -77,6 +92,7 @@ impl TryFrom<u8> for Status {
 
 /// USB endpoint transfer type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 #[repr(u8)]
 pub enum TransferType {
     Control = 0,
@@ -84,6 +100,18 @@ pub enum TransferType {
     Bulk = 2,
     Interrupt = 3,
     Invalid = 255,
+}
+
+impl std::fmt::Display for TransferType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Control => "control",
+            Self::Iso => "isochronous",
+            Self::Bulk => "bulk",
+            Self::Interrupt => "interrupt",
+            Self::Invalid => "invalid",
+        })
+    }
 }
 
 impl TryFrom<u8> for TransferType {
@@ -102,6 +130,7 @@ impl TryFrom<u8> for TransferType {
 
 /// USB device speed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 #[repr(u8)]
 pub enum Speed {
     Low = 0,
@@ -109,6 +138,18 @@ pub enum Speed {
     High = 2,
     Super = 3,
     Unknown = 255,
+}
+
+impl std::fmt::Display for Speed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Low => "low",
+            Self::Full => "full",
+            Self::High => "high",
+            Self::Super => "super",
+            Self::Unknown => "unknown",
+        })
+    }
 }
 
 impl TryFrom<u8> for Speed {

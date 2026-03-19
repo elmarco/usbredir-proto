@@ -11,12 +11,12 @@
 
 ## Medium Impact
 
-- [ ] `#[non_exhaustive]` on public enums — `Packet`, `Error`, `Event`, `Status`, `Speed`, `TransferType` to allow adding variants without breaking changes
-- [ ] Clippy pedantic — enable `#![warn(clippy::pedantic)]` and fix warnings
-- [ ] `Display` for `Packet` — useful for logging/debugging
-- [ ] Typed `Endpoint` newtype — replace `endpoint: u8` with `Endpoint(u8)` providing `.is_input()`, `.number()`, `.direction()` methods
-- [ ] `Packet` helper constructors — e.g. `Packet::set_configuration(id, config)`, `Packet::bulk_packet(id, endpoint, data)` to reduce verbosity
-- [ ] `ParserConfig` builder — use builder pattern or `Default` + method chaining
+- [x] `#[non_exhaustive]` on public enums — `Packet`, `Error`, `FilterError`, `Event`, `LogLevel`, `Status`, `Speed`, `TransferType`
+- [x] Clippy pedantic — fixed `format!` appended to String, added `#[must_use]`, inline format args
+- [x] `Display` for `Packet`, `Status`, `TransferType`, `Speed` — concise format for logging
+- [x] `ParserConfig` builder — `Default` impl + `ParserConfig::new("v").is_host(true).cap(Cap::Ids64Bits)` chaining
+- [ ] Typed `Endpoint` newtype — deferred: high churn across all packet variants for modest gain
+- [ ] `Packet` helper constructors — deferred: 33 variants make constructors no simpler than struct literals
 
 ## Lower Priority / Polish
 

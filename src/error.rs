@@ -2,6 +2,7 @@ use crate::caps::Cap;
 
 /// Errors returned by the parser during packet encoding, decoding, or verification.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("unknown packet type: {0}")]
     UnknownPacketType(u32),
@@ -37,6 +38,7 @@ pub enum Error {
 
 /// Errors from filter rule parsing or verification.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum FilterError {
     #[error("invalid filter string")]
     InvalidString,
