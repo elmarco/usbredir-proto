@@ -543,9 +543,9 @@ impl Parser {
                         return;
                     }
 
-                    let body = self.input.split_to(body_len);
+                    let body = self.input.split_to(body_len).freeze();
                     let type_header = &body[..self.type_header_len];
-                    let data = &body[self.type_header_len..];
+                    let data = body.slice(self.type_header_len..);
 
                     match self.decode_packet(type_header, data)
                         .and_then(|packet| {
@@ -810,7 +810,7 @@ impl Parser {
         Ok(())
     }
 
-    fn decode_packet(&self, type_header: &[u8], data: &[u8]) -> Result<Packet> {
+    fn decode_packet(&self, type_header: &[u8], data: Bytes) -> Result<Packet> {
         let id = self.pkt_id;
 
         match self.pkt_type {
@@ -822,7 +822,7 @@ impl Parser {
                     .unwrap_or("")
                     .trim_end_matches('\0')
                     .to_string();
-                let caps = Caps::from_le_bytes(data);
+                let caps = Caps::from_le_bytes(&data);
                 Ok(Packet::Hello { version, caps })
             }
             pkt_type::DEVICE_CONNECT => {
@@ -1089,7 +1089,7 @@ impl Parser {
                     value: hdr.value.get(),
                     index: hdr.index.get(),
                     length: hdr.length.get(),
-                    data: Bytes::copy_from_slice(data),
+                    data: data.clone(),
                 })
             }
             pkt_type::BULK_PACKET => {
@@ -1104,7 +1104,7 @@ impl Parser {
                         status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
                         length,
                         stream_id: hdr.stream_id.get(),
-                        data: Bytes::copy_from_slice(data),
+                        data: data.clone(),
                     })
                 } else {
                     let hdr = wire::BulkPacketHeader16BitLength::read_from_bytes(type_header)
@@ -1115,7 +1115,7 @@ impl Parser {
                         status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
                         length: hdr.length.get() as u32,
                         stream_id: hdr.stream_id.get(),
-                        data: Bytes::copy_from_slice(data),
+                        data: data.clone(),
                     })
                 }
             }
@@ -1127,7 +1127,7 @@ impl Parser {
                     endpoint: Endpoint::new(hdr.endpoint),
                     status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
                     length: hdr.length.get(),
-                    data: Bytes::copy_from_slice(data),
+                    data: data.clone(),
                 })
             }
             pkt_type::INTERRUPT_PACKET => {
@@ -1138,7 +1138,7 @@ impl Parser {
                     endpoint: Endpoint::new(hdr.endpoint),
                     status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
                     length: hdr.length.get(),
-                    data: Bytes::copy_from_slice(data),
+                    data: data.clone(),
                 })
             }
             pkt_type::BUFFERED_BULK_PACKET => {
@@ -1150,7 +1150,7 @@ impl Parser {
                     length: hdr.length.get(),
                     endpoint: Endpoint::new(hdr.endpoint),
                     status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
-                    data: Bytes::copy_from_slice(data),
+                    data: data.clone(),
                 })
             }
             _ => Err(Error::UnknownPacketType(self.pkt_type)),

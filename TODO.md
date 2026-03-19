@@ -2,25 +2,19 @@
 
 ## High Impact
 
-- [x] `#[deny(missing_docs)]` + public API docs — module-level docs, doc comments on `Packet`, `Parser`, `Caps`, `FilterRule`, and all public methods
-- [x] `TryFrom<u8>` instead of `from_u8` — `Status`, `TransferType`, `Speed` now use `TryFrom<u8>` returning `Result`
-- [x] `impl Iterator` for `Parser::poll()` — added `Parser::events()` returning `impl Iterator<Item = Event>`
-- [x] `impl Iterator` for `Parser::drain()` — added `Parser::drain_output()` returning `impl Iterator<Item = Bytes>`
-- [x] Make `wire` module private — changed to `pub(crate) mod wire`
-- [x] Reduce `encode_packet` allocation — replaced 288-byte scratch Vec + data Vec with single `BytesMut` + `write_hdr!` macro
+- [ ] Zero-copy decode — `parser.rs:1092,1107,1118,1130,1141,1153` all do `Bytes::copy_from_slice(data)`. Since input is already a `BytesMut`, split the body as `Bytes` and slice it to avoid a full copy on every data packet. Matters at USB 3.0 bulk speeds.
+- [ ] `Box<Packet>` in `Event` — clippy flags `large_enum_variant` (`parser.rs:101`). `Packet` is 288 bytes (because of `EpInfo` with five `[_;32]` arrays), making every `Event` 288 bytes. Boxing drops `Event` to ~40 bytes.
+- [ ] `tracing` instead of `Event::Log` — returning log messages through the event queue (`parser.rs:104`) is awkward. A `tracing` feature flag would let the parser emit `tracing::info!()`/`tracing::error!()` directly (Rust ecosystem standard). Remove `Log` variant or keep behind `no_std` path.
 
 ## Medium Impact
 
-- [x] `#[non_exhaustive]` on public enums — `Packet`, `Error`, `FilterError`, `Event`, `LogLevel`, `Status`, `Speed`, `TransferType`
-- [x] Clippy pedantic — fixed `format!` appended to String, added `#[must_use]`, inline format args
-- [x] `Display` for `Packet`, `Status`, `TransferType`, `Speed` — concise format for logging
-- [x] `ParserConfig` builder — `Default` impl + `ParserConfig::new("v").is_host(true).cap(Cap::Ids64Bits)` chaining
-- [x] Typed `Endpoint` newtype — `Endpoint` wrapping `u8` with `is_input()`, `number()`, `raw()` methods; replaces `endpoint: u8` in 14 packet variants
-- [x] `Packet` helper constructors — snake_case constructors for all 33 variants (e.g. `Packet::bulk_packet(id, ep, ...)`) with `impl Into<Bytes>` for data params
+- [ ] Caps builder — add `fn with(mut self, cap: Cap) -> Self` so caps can be built without `let mut`: `Caps::new().with(Cap::Ids64Bits).with(Cap::BulkLength32Bits)`
+- [ ] Packet accessor methods — many variants share `endpoint`, `status`, `data`, `id`. Add `pub fn endpoint(&self) -> Option<Endpoint>`, `status()`, `data()` to avoid destructuring every time.
+- [ ] Fix existing clippy warnings — 14 warnings: `map_or` → `is_some_and`/`is_none_or`, `needless_range_loop`, `too_many_arguments`. Worth cleaning up for a library crate.
+- [ ] `tokio-util` codec — behind a `tokio` feature flag, impl `Decoder<Item=Event>` and `Encoder<Packet>` on a `UsbredirCodec`. The #1 thing downstream users will want — most usbredir runs over TCP.
 
-## Lower Priority / Polish
+## Lower Impact / Polish
 
-- [x] Fuzz targets — `cargo-fuzz` for parser (`fuzz_parser`) and filter (`fuzz_filter`)
-- [x] `no_std` support — `#![cfg_attr(not(feature = "std"), no_std)]` with `extern crate alloc`; `std` feature on by default
-- [x] Benchmarks — `criterion` benchmarks for encode/decode/roundtrip/filter throughput (`benches/codec.rs`)
-- [x] CI — GitHub Actions with test, no_std check, clippy, rustfmt (`.github/workflows/ci.yml`)
+- [ ] Property-based testing — `proptest` or `arbitrary` with `Arbitrary` impls for `Packet`. Generate random valid packets, encode, decode, check roundtrip. Stronger than hand-written test cases.
+- [ ] `impl Debug` for `Parser` — currently missing (`parser.rs:119`). At minimum a manual impl showing state/caps/buffer sizes.
+- [ ] MSRV policy — pick one (e.g. 1.75) and add `rust-version` to `Cargo.toml`. Currently uses `is_some_and`/`is_none_or` (1.82+) after clippy fixes, so worth declaring.
