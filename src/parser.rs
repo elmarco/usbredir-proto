@@ -1186,7 +1186,7 @@ impl Parser {
     /// via [`drain()`](Self::drain) or [`drain_output()`](Self::drain_output).
     pub fn send(&mut self, packet: Packet) -> Result<()> {
         let pkt_type = packet.packet_type();
-        let id = packet.id();
+        let id = packet.id().unwrap_or(0);
         let type_header_len = self.get_type_header_len(pkt_type, true)?;
 
         self.verify_packet(&packet, true)?;

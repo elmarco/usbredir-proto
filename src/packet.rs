@@ -566,9 +566,12 @@ impl Packet {
         }
     }
 
-    /// Returns the packet's correlation ID (0 for connectionwide messages).
+    /// Returns the packet's correlation ID, or `None` for connection-wide
+    /// packets that don't carry one (`Hello`, `DeviceConnect`,
+    /// `DeviceDisconnect`, `InterfaceInfo`, `EpInfo`, `FilterReject`,
+    /// `FilterFilter`, `DeviceDisconnectAck`).
     #[must_use]
-    pub fn id(&self) -> u64 {
+    pub fn id(&self) -> Option<u64> {
         match self {
             Packet::Hello { .. }
             | Packet::DeviceConnect { .. }
@@ -577,7 +580,7 @@ impl Packet {
             | Packet::EpInfo { .. }
             | Packet::FilterReject
             | Packet::FilterFilter { .. }
-            | Packet::DeviceDisconnectAck => 0,
+            | Packet::DeviceDisconnectAck => None,
             Packet::Reset { id, .. }
             | Packet::SetConfiguration { id, .. }
             | Packet::GetConfiguration { id, .. }
@@ -597,8 +600,8 @@ impl Packet {
             | Packet::CancelDataPacket { id, .. }
             | Packet::StartBulkReceiving { id, .. }
             | Packet::StopBulkReceiving { id, .. }
-            | Packet::BulkReceivingStatus { id, .. } => *id,
-            Packet::Data(d) => d.id,
+            | Packet::BulkReceivingStatus { id, .. } => Some(*id),
+            Packet::Data(d) => Some(d.id),
         }
     }
 
