@@ -51,24 +51,30 @@ impl Parser {
 
         // Partial parse state: the C format stores partially-read header/type_header/data
         // separately. In our parser, after the header phase completes the header bytes have
-        // been consumed from `input` and the parsed fields are stored in pkt_type/pkt_length/
-        // pkt_id. If we're in Body phase, we must reconstruct the header bytes so that the
+        // been consumed from `input` and the parsed fields are stored in ParseState::Body.
+        // If we're in Body phase, we must reconstruct the header bytes so that the
         // unserialized parser (or C) can re-parse from the beginning of the packet.
-        if self.phase() == crate::parser::ParsePhase::Body {
+        if let crate::parser::ParseState::Body {
+            pkt_type,
+            pkt_length,
+            pkt_id,
+            ..
+        } = *self.parse_state()
+        {
             // Reconstruct the consumed header so the deserializer sees the full packet
             let mut hdr_bytes = Vec::new();
             if self.is_using_32bit_ids() {
                 let hdr = crate::wire::Header32 {
-                    type_: self.pkt_type().into(),
-                    length: self.pkt_length().into(),
-                    id: (self.pkt_id() as u32).into(),
+                    type_: pkt_type.into(),
+                    length: pkt_length.into(),
+                    id: (pkt_id as u32).into(),
                 };
                 hdr_bytes.extend_from_slice(zerocopy::IntoBytes::as_bytes(&hdr));
             } else {
                 let hdr = crate::wire::Header {
-                    type_: self.pkt_type().into(),
-                    length: self.pkt_length().into(),
-                    id: self.pkt_id().into(),
+                    type_: pkt_type.into(),
+                    length: pkt_length.into(),
+                    id: pkt_id.into(),
                 };
                 hdr_bytes.extend_from_slice(zerocopy::IntoBytes::as_bytes(&hdr));
             }

@@ -111,10 +111,17 @@ pub enum Event {
     Log { level: LogLevel, message: String },
 }
 
+/// Parse state machine: tracks whether we're waiting for a packet header
+/// or already have a parsed header and are waiting for the body bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ParsePhase {
+pub(crate) enum ParseState {
     Header,
-    Body,
+    Body {
+        pkt_type: u32,
+        pkt_length: u32,
+        pkt_id: u64,
+        type_header_len: usize,
+    },
 }
 
 /// Sans-IO usbredir protocol parser and encoder.
@@ -132,13 +139,8 @@ pub struct Parser {
     input: BytesMut,
 
     // Parse state
-    phase: ParsePhase,
+    state: ParseState,
     to_skip: usize,
-    // Parsed header fields (set after header phase completes)
-    pkt_type: u32,
-    pkt_length: u32,
-    pkt_id: u64,
-    type_header_len: usize,
 
     // Output
     events: VecDeque<Event>,
@@ -152,7 +154,7 @@ impl core::fmt::Debug for Parser {
             .field("is_host", &self.config.is_host)
             .field("our_caps", &self.our_caps)
             .field("peer_caps", &self.peer_caps)
-            .field("phase", &self.phase)
+            .field("state", &self.state)
             .field("input_bytes", &self.input.len())
             .field("pending_events", &self.events.len())
             .field("output_bufs", &self.output.len())
@@ -177,12 +179,8 @@ impl Parser {
             our_caps,
             peer_caps: None,
             input: BytesMut::new(),
-            phase: ParsePhase::Header,
+            state: ParseState::Header,
             to_skip: 0,
-            pkt_type: 0,
-            pkt_length: 0,
-            pkt_id: 0,
-            type_header_len: 0,
             events: VecDeque::new(),
             output: VecDeque::new(),
             output_total_size: 0,
@@ -497,81 +495,93 @@ impl Parser {
                 }
             }
 
-            match self.phase {
-                ParsePhase::Header => {
+            match self.state {
+                ParseState::Header => {
                     let hlen = self.header_len();
                     if self.input.len() < hlen {
                         return;
                     }
 
                     // Parse header
+                    let (pkt_type, pkt_length, pkt_id);
                     if self.using_32bit_ids() {
                         let hdr = wire::Header32::read_from_bytes(&self.input[..hlen]).unwrap();
-                        self.pkt_type = hdr.type_.get();
-                        self.pkt_length = hdr.length.get();
-                        self.pkt_id = hdr.id.get() as u64;
+                        pkt_type = hdr.type_.get();
+                        pkt_length = hdr.length.get();
+                        pkt_id = hdr.id.get() as u64;
                     } else {
                         let hdr = wire::Header::read_from_bytes(&self.input[..hlen]).unwrap();
-                        self.pkt_type = hdr.type_.get();
-                        self.pkt_length = hdr.length.get();
-                        self.pkt_id = hdr.id.get();
+                        pkt_type = hdr.type_.get();
+                        pkt_length = hdr.length.get();
+                        pkt_id = hdr.id.get();
                     }
 
                     // Validate type
-                    let type_header_len = match self.get_type_header_len(self.pkt_type, false) {
+                    let type_header_len = match self.get_type_header_len(pkt_type, false) {
                         Ok(len) => len,
                         Err(e) => {
                             let _ = self.input.split_to(hlen);
-                            self.to_skip = self.pkt_length as usize;
+                            self.to_skip = pkt_length as usize;
                             self.events.push_back(Event::ParseError(e));
                             continue;
                         }
                     };
 
                     // Validate length
-                    if self.pkt_length > MAX_PACKET_SIZE {
+                    if pkt_length > MAX_PACKET_SIZE {
                         let _ = self.input.split_to(hlen);
-                        self.to_skip = self.pkt_length as usize;
+                        self.to_skip = pkt_length as usize;
                         self.events
                             .push_back(Event::ParseError(Error::PacketTooLarge {
-                                length: self.pkt_length,
+                                length: pkt_length,
                                 max: MAX_PACKET_SIZE,
                             }));
                         continue;
                     }
 
-                    if (self.pkt_length as usize) < type_header_len
-                        || ((self.pkt_length as usize) > type_header_len
-                            && !Self::expects_extra_data(self.pkt_type))
+                    if (pkt_length as usize) < type_header_len
+                        || ((pkt_length as usize) > type_header_len
+                            && !Self::expects_extra_data(pkt_type))
                     {
                         let _ = self.input.split_to(hlen);
-                        self.to_skip = self.pkt_length as usize;
+                        self.to_skip = pkt_length as usize;
                         self.events
                             .push_back(Event::ParseError(Error::InvalidPacketLength {
-                                packet_type: self.pkt_type,
-                                length: self.pkt_length,
+                                packet_type: pkt_type,
+                                length: pkt_length,
                             }));
                         continue;
                     }
 
-                    self.type_header_len = type_header_len;
                     let _ = self.input.split_to(hlen);
-                    self.phase = ParsePhase::Body;
+                    self.state = ParseState::Body {
+                        pkt_type,
+                        pkt_length,
+                        pkt_id,
+                        type_header_len,
+                    };
                 }
-                ParsePhase::Body => {
-                    let body_len = self.pkt_length as usize;
+                ParseState::Body {
+                    pkt_type,
+                    pkt_length,
+                    pkt_id,
+                    type_header_len,
+                } => {
+                    let body_len = pkt_length as usize;
                     if self.input.len() < body_len {
                         return;
                     }
 
                     let body = self.input.split_to(body_len).freeze();
-                    let type_header = &body[..self.type_header_len];
-                    let data = body.slice(self.type_header_len..);
+                    let type_header = &body[..type_header_len];
+                    let data = body.slice(type_header_len..);
 
-                    match self.decode_packet(type_header, data).and_then(|packet| {
-                        self.verify_packet(&packet, false)?;
-                        Ok(packet)
-                    }) {
+                    match self
+                        .decode_packet(pkt_type, pkt_id, type_header, data)
+                        .and_then(|packet| {
+                            self.verify_packet(&packet, false)?;
+                            Ok(packet)
+                        }) {
                         Ok(packet) => {
                             // Intercept hello to store peer caps
                             if let Packet::Hello {
@@ -616,7 +626,7 @@ impl Parser {
                         }
                     }
 
-                    self.phase = ParsePhase::Header;
+                    self.state = ParseState::Header;
                 }
             }
         }
@@ -812,10 +822,8 @@ impl Parser {
         Ok(())
     }
 
-    fn decode_packet(&self, type_header: &[u8], data: Bytes) -> Result<Packet> {
-        let id = self.pkt_id;
-
-        match self.pkt_type {
+    fn decode_packet(&self, pkt_type: u32, id: u64, type_header: &[u8], data: Bytes) -> Result<Packet> {
+        match pkt_type {
             pkt_type::HELLO => {
                 let hdr = wire::HelloHeader::read_from_bytes(type_header)
                     .map_err(|_| Error::Deserialize("hello header".into()))?;
@@ -1169,7 +1177,7 @@ impl Parser {
                     data: data.clone(),
                 }))
             }
-            _ => Err(Error::UnknownPacketType(self.pkt_type)),
+            _ => Err(Error::UnknownPacketType(pkt_type)),
         }
     }
 
@@ -1587,9 +1595,8 @@ impl Parser {
         self.to_skip
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn phase(&self) -> ParsePhase {
-        self.phase
+    pub(crate) fn parse_state(&self) -> &ParseState {
+        &self.state
     }
 
     #[allow(dead_code)]
@@ -1599,18 +1606,6 @@ impl Parser {
 
     pub(crate) fn output_bufs(&self) -> &VecDeque<Bytes> {
         &self.output
-    }
-
-    pub(crate) fn pkt_type(&self) -> u32 {
-        self.pkt_type
-    }
-
-    pub(crate) fn pkt_length(&self) -> u32 {
-        self.pkt_length
-    }
-
-    pub(crate) fn pkt_id(&self) -> u64 {
-        self.pkt_id
     }
 
     pub(crate) fn is_using_32bit_ids(&self) -> bool {
