@@ -22,6 +22,7 @@ tokio-util = { version = "0.7", features = ["codec"], optional = true }
 [dev-dependencies]
 usbredirparser-sys = "0.4"
 criterion = "0.5"
+proptest = "1"
 
 [[bench]]
 name = "codec"
