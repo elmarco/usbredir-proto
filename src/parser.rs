@@ -1,4 +1,6 @@
+use alloc::boxed::Box;
 use alloc::collections::VecDeque;
+#[cfg(not(feature = "tracing"))]
 use alloc::format;
 use alloc::string::{String, ToString};
 
@@ -557,6 +559,9 @@ impl Parser {
                             // Intercept hello to store peer caps
                             if let Packet::Hello { ref caps, ref version, .. } = packet {
                                 if self.peer_caps.is_some() {
+                                    #[cfg(feature = "tracing")]
+                                    tracing::error!("Received second hello message, ignoring");
+                                    #[cfg(not(feature = "tracing"))]
                                     self.events.push_back(Event::Log {
                                         level: LogLevel::Error,
                                         message: "Received second hello message, ignoring"
@@ -566,12 +571,18 @@ impl Parser {
                                     let mut peer_caps = *caps;
                                     peer_caps.verify();
                                     self.peer_caps = Some(peer_caps);
+                                    let id_bits = if self.using_32bit_ids() { 32 } else { 64 };
+                                    #[cfg(feature = "tracing")]
+                                    tracing::info!(
+                                        peer_version = %version,
+                                        id_bits,
+                                        "Peer hello received"
+                                    );
+                                    #[cfg(not(feature = "tracing"))]
                                     self.events.push_back(Event::Log {
                                         level: LogLevel::Info,
                                         message: format!(
-                                            "Peer version: {}, using {}-bits ids",
-                                            version,
-                                            if self.using_32bit_ids() { 32 } else { 64 }
+                                            "Peer version: {version}, using {id_bits}-bits ids"
                                         ),
                                     });
                                 }

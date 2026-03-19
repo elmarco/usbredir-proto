@@ -8,12 +8,14 @@ license = "LGPL-2.1-or-later"
 [features]
 default = ["std"]
 std = ["bytes/std", "thiserror/std"]
+tracing = ["dep:tracing"]
 
 [dependencies]
 bytes = { version = "1", default-features = false }
 zerocopy = { version = "0.8", default-features = false, features = ["derive"] }
 bitflags = { version = "2", default-features = false }
 thiserror = { version = "2", default-features = false }
+tracing = { version = "0.1", default-features = false, optional = true }
 
 [dev-dependencies]
 usbredirparser-sys = "0.4"
