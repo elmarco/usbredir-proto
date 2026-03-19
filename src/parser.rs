@@ -703,87 +703,38 @@ impl Parser {
                     });
                 }
             }
-            Packet::ControlPacket {
-                endpoint,
-                length,
-                data,
-                ..
-            } => {
-                self.verify_data_packet_direction(
-                    endpoint,
-                    command_for_host,
-                    *length as usize,
-                    data.len(),
-                    pkt_type::CONTROL_PACKET,
-                )?;
-            }
-            Packet::BulkPacket {
-                endpoint,
-                length,
-                data,
-                ..
-            } => {
-                if *length > crate::proto::MAX_BULK_TRANSFER_SIZE {
-                    return Err(Error::BulkTransferTooLarge {
-                        length: *length,
-                        max: crate::proto::MAX_BULK_TRANSFER_SIZE,
-                    });
+            Packet::Data(d) => {
+                use crate::packet::DataKind;
+                let wire_type = d.kind.packet_type();
+                let header_length = d.kind.length() as usize;
+
+                match &d.kind {
+                    DataKind::Bulk { length, .. } => {
+                        if *length > crate::proto::MAX_BULK_TRANSFER_SIZE {
+                            return Err(Error::BulkTransferTooLarge {
+                                length: *length,
+                                max: crate::proto::MAX_BULK_TRANSFER_SIZE,
+                            });
+                        }
+                    }
+                    DataKind::BufferedBulk { length, .. } => {
+                        self.verify_bulk_recv_cap(sending)?;
+                        if *length > crate::proto::MAX_BULK_TRANSFER_SIZE {
+                            return Err(Error::BulkTransferTooLarge {
+                                length: *length,
+                                max: crate::proto::MAX_BULK_TRANSFER_SIZE,
+                            });
+                        }
+                    }
+                    _ => {}
                 }
+
                 self.verify_data_packet_direction(
-                    endpoint,
+                    &d.endpoint,
                     command_for_host,
-                    *length as usize,
-                    data.len(),
-                    pkt_type::BULK_PACKET,
-                )?;
-            }
-            Packet::IsoPacket {
-                endpoint,
-                length,
-                data,
-                ..
-            } => {
-                self.verify_data_packet_direction(
-                    endpoint,
-                    command_for_host,
-                    *length as usize,
-                    data.len(),
-                    pkt_type::ISO_PACKET,
-                )?;
-            }
-            Packet::InterruptPacket {
-                endpoint,
-                length,
-                data,
-                ..
-            } => {
-                self.verify_data_packet_direction(
-                    endpoint,
-                    command_for_host,
-                    *length as usize,
-                    data.len(),
-                    pkt_type::INTERRUPT_PACKET,
-                )?;
-            }
-            Packet::BufferedBulkPacket {
-                endpoint,
-                length,
-                data,
-                ..
-            } => {
-                self.verify_bulk_recv_cap(sending)?;
-                if *length > crate::proto::MAX_BULK_TRANSFER_SIZE {
-                    return Err(Error::BulkTransferTooLarge {
-                        length: *length,
-                        max: crate::proto::MAX_BULK_TRANSFER_SIZE,
-                    });
-                }
-                self.verify_data_packet_direction(
-                    endpoint,
-                    command_for_host,
-                    *length as usize,
-                    data.len(),
-                    pkt_type::BUFFERED_BULK_PACKET,
+                    header_length,
+                    d.data.len(),
+                    wire_type,
                 )?;
             }
             _ => {}
@@ -1134,77 +1085,89 @@ impl Parser {
             pkt_type::CONTROL_PACKET => {
                 let hdr = wire::ControlPacketHeader::read_from_bytes(type_header)
                     .map_err(|_| Error::Deserialize("control pkt".into()))?;
-                Ok(Packet::ControlPacket {
+                Ok(Packet::Data(crate::packet::DataPacket {
                     id,
                     endpoint: Endpoint::new(hdr.endpoint),
-                    request: hdr.request,
-                    requesttype: hdr.requesttype,
                     status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
-                    value: hdr.value.get(),
-                    index: hdr.index.get(),
-                    length: hdr.length.get(),
+                    kind: crate::packet::DataKind::Control {
+                        request: hdr.request,
+                        requesttype: hdr.requesttype,
+                        value: hdr.value.get(),
+                        index: hdr.index.get(),
+                        length: hdr.length.get(),
+                    },
                     data: data.clone(),
-                })
+                }))
             }
             pkt_type::BULK_PACKET => {
                 if self.negotiated(Cap::BulkLength32Bits) {
                     let hdr = wire::BulkPacketHeader::read_from_bytes(type_header)
                         .map_err(|_| Error::Deserialize("bulk pkt".into()))?;
                     let length = ((hdr.length_high.get() as u32) << 16) | (hdr.length.get() as u32);
-                    Ok(Packet::BulkPacket {
+                    Ok(Packet::Data(crate::packet::DataPacket {
                         id,
                         endpoint: Endpoint::new(hdr.endpoint),
                         status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
-                        length,
-                        stream_id: hdr.stream_id.get(),
+                        kind: crate::packet::DataKind::Bulk {
+                            length,
+                            stream_id: hdr.stream_id.get(),
+                        },
                         data: data.clone(),
-                    })
+                    }))
                 } else {
                     let hdr = wire::BulkPacketHeader16BitLength::read_from_bytes(type_header)
                         .map_err(|_| Error::Deserialize("bulk pkt 16".into()))?;
-                    Ok(Packet::BulkPacket {
+                    Ok(Packet::Data(crate::packet::DataPacket {
                         id,
                         endpoint: Endpoint::new(hdr.endpoint),
                         status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
-                        length: hdr.length.get() as u32,
-                        stream_id: hdr.stream_id.get(),
+                        kind: crate::packet::DataKind::Bulk {
+                            length: hdr.length.get() as u32,
+                            stream_id: hdr.stream_id.get(),
+                        },
                         data: data.clone(),
-                    })
+                    }))
                 }
             }
             pkt_type::ISO_PACKET => {
                 let hdr = wire::IsoPacketHeader::read_from_bytes(type_header)
                     .map_err(|_| Error::Deserialize("iso pkt".into()))?;
-                Ok(Packet::IsoPacket {
+                Ok(Packet::Data(crate::packet::DataPacket {
                     id,
                     endpoint: Endpoint::new(hdr.endpoint),
                     status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
-                    length: hdr.length.get(),
+                    kind: crate::packet::DataKind::Iso {
+                        length: hdr.length.get(),
+                    },
                     data: data.clone(),
-                })
+                }))
             }
             pkt_type::INTERRUPT_PACKET => {
                 let hdr = wire::InterruptPacketHeader::read_from_bytes(type_header)
                     .map_err(|_| Error::Deserialize("interrupt pkt".into()))?;
-                Ok(Packet::InterruptPacket {
+                Ok(Packet::Data(crate::packet::DataPacket {
                     id,
                     endpoint: Endpoint::new(hdr.endpoint),
                     status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
-                    length: hdr.length.get(),
+                    kind: crate::packet::DataKind::Interrupt {
+                        length: hdr.length.get(),
+                    },
                     data: data.clone(),
-                })
+                }))
             }
             pkt_type::BUFFERED_BULK_PACKET => {
                 let hdr = wire::BufferedBulkPacketHeader::read_from_bytes(type_header)
                     .map_err(|_| Error::Deserialize("buffered bulk".into()))?;
-                Ok(Packet::BufferedBulkPacket {
+                Ok(Packet::Data(crate::packet::DataPacket {
                     id,
-                    stream_id: hdr.stream_id.get(),
-                    length: hdr.length.get(),
                     endpoint: Endpoint::new(hdr.endpoint),
                     status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
+                    kind: crate::packet::DataKind::BufferedBulk {
+                        stream_id: hdr.stream_id.get(),
+                        length: hdr.length.get(),
+                    },
                     data: data.clone(),
-                })
+                }))
             }
             _ => Err(Error::UnknownPacketType(self.pkt_type)),
         }
@@ -1518,97 +1481,68 @@ impl Parser {
                     status: *status as u8,
                 });
             }
-            Packet::ControlPacket {
-                endpoint,
-                request,
-                requesttype,
-                status,
-                value,
-                index,
-                length,
-                data: pdata,
-                ..
-            } => {
-                write_hdr!(wire::ControlPacketHeader {
-                    endpoint: endpoint.raw(),
-                    request: *request,
-                    requesttype: *requesttype,
-                    status: *status as u8,
-                    value: (*value).into(),
-                    index: (*index).into(),
-                    length: (*length).into(),
-                });
-                buf.extend_from_slice(pdata);
-            }
-            Packet::BulkPacket {
-                endpoint,
-                status,
-                length,
-                stream_id,
-                data: pdata,
-                ..
-            } => {
-                if self.negotiated(Cap::BulkLength32Bits) {
-                    write_hdr!(wire::BulkPacketHeader {
-                        endpoint: endpoint.raw(),
-                        status: *status as u8,
-                        length: (*length as u16).into(),
-                        stream_id: (*stream_id).into(),
-                        length_high: ((*length >> 16) as u16).into(),
-                    });
-                } else {
-                    write_hdr!(wire::BulkPacketHeader16BitLength {
-                        endpoint: endpoint.raw(),
-                        status: *status as u8,
-                        length: (*length as u16).into(),
-                        stream_id: (*stream_id).into(),
-                    });
+            Packet::Data(d) => {
+                use crate::packet::DataKind;
+                match &d.kind {
+                    DataKind::Control {
+                        request,
+                        requesttype,
+                        value,
+                        index,
+                        length,
+                    } => {
+                        write_hdr!(wire::ControlPacketHeader {
+                            endpoint: d.endpoint.raw(),
+                            request: *request,
+                            requesttype: *requesttype,
+                            status: d.status as u8,
+                            value: (*value).into(),
+                            index: (*index).into(),
+                            length: (*length).into(),
+                        });
+                    }
+                    DataKind::Bulk { length, stream_id } => {
+                        if self.negotiated(Cap::BulkLength32Bits) {
+                            write_hdr!(wire::BulkPacketHeader {
+                                endpoint: d.endpoint.raw(),
+                                status: d.status as u8,
+                                length: (*length as u16).into(),
+                                stream_id: (*stream_id).into(),
+                                length_high: ((*length >> 16) as u16).into(),
+                            });
+                        } else {
+                            write_hdr!(wire::BulkPacketHeader16BitLength {
+                                endpoint: d.endpoint.raw(),
+                                status: d.status as u8,
+                                length: (*length as u16).into(),
+                                stream_id: (*stream_id).into(),
+                            });
+                        }
+                    }
+                    DataKind::Iso { length } => {
+                        write_hdr!(wire::IsoPacketHeader {
+                            endpoint: d.endpoint.raw(),
+                            status: d.status as u8,
+                            length: (*length).into(),
+                        });
+                    }
+                    DataKind::Interrupt { length } => {
+                        write_hdr!(wire::InterruptPacketHeader {
+                            endpoint: d.endpoint.raw(),
+                            status: d.status as u8,
+                            length: (*length).into(),
+                        });
+                    }
+                    DataKind::BufferedBulk { stream_id, length } => {
+                        write_hdr!(wire::BufferedBulkPacketHeader {
+                            stream_id: (*stream_id).into(),
+                            length: (*length).into(),
+                            endpoint: d.endpoint.raw(),
+                            status: d.status as u8,
+                        });
+                    }
                 }
-                buf.extend_from_slice(pdata);
-            }
-            Packet::IsoPacket {
-                endpoint,
-                status,
-                length,
-                data: pdata,
-                ..
-            } => {
-                write_hdr!(wire::IsoPacketHeader {
-                    endpoint: endpoint.raw(),
-                    status: *status as u8,
-                    length: (*length).into(),
-                });
-                buf.extend_from_slice(pdata);
-            }
-            Packet::InterruptPacket {
-                endpoint,
-                status,
-                length,
-                data: pdata,
-                ..
-            } => {
-                write_hdr!(wire::InterruptPacketHeader {
-                    endpoint: endpoint.raw(),
-                    status: *status as u8,
-                    length: (*length).into(),
-                });
-                buf.extend_from_slice(pdata);
-            }
-            Packet::BufferedBulkPacket {
-                stream_id,
-                length,
-                endpoint,
-                status,
-                data: pdata,
-                ..
-            } => {
-                write_hdr!(wire::BufferedBulkPacketHeader {
-                    stream_id: (*stream_id).into(),
-                    length: (*length).into(),
-                    endpoint: endpoint.raw(),
-                    status: *status as u8,
-                });
-                buf.extend_from_slice(pdata);
+                buf.extend_from_slice(&d.data);
             }
         }
 

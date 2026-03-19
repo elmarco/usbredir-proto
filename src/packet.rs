@@ -7,6 +7,214 @@ use crate::caps::Caps;
 use crate::filter::FilterRule;
 use crate::proto::{Endpoint, Speed, Status, TransferType};
 
+/// The type-specific part of a data transfer packet.
+///
+/// Each USB transfer type has its own header fields beyond the shared
+/// [`DataPacket`] fields (`id`, `endpoint`, `status`, `data`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum DataKind {
+    /// USB control transfer (endpoint 0 setup transactions).
+    ///
+    /// `request`, `requesttype`, `value`, and `index` map directly to the
+    /// fields of a USB SETUP packet (see [USB 2.0 spec §9.3][setup]).
+    ///
+    /// [setup]: https://www.usb.org/document-library/usb-20-specification
+    Control {
+        request: u8,
+        requesttype: u8,
+        value: u16,
+        index: u16,
+        length: u16,
+    },
+    /// USB bulk transfer. Used for large, reliable transfers with no latency
+    /// guarantee (e.g. mass storage, printing).
+    Bulk { length: u32, stream_id: u32 },
+    /// USB isochronous transfer. Used for real-time data (e.g. audio/video)
+    /// where occasional data loss is acceptable.
+    Iso { length: u16 },
+    /// USB interrupt transfer. Used for small, latency-sensitive transfers
+    /// (e.g. keyboard/mouse input).
+    Interrupt { length: u16 },
+    /// Host-buffered bulk IN transfer. Requires
+    /// [`Cap::BulkReceiving`](crate::Cap::BulkReceiving).
+    BufferedBulk { stream_id: u32, length: u32 },
+}
+
+impl DataKind {
+    /// Returns the wire packet type ID for this data kind.
+    #[must_use]
+    pub fn packet_type(&self) -> u32 {
+        use crate::proto::pkt_type::*;
+        match self {
+            DataKind::Control { .. } => CONTROL_PACKET,
+            DataKind::Bulk { .. } => BULK_PACKET,
+            DataKind::Iso { .. } => ISO_PACKET,
+            DataKind::Interrupt { .. } => INTERRUPT_PACKET,
+            DataKind::BufferedBulk { .. } => BUFFERED_BULK_PACKET,
+        }
+    }
+
+    /// Returns the `length` field from the type-specific header.
+    #[must_use]
+    pub fn length(&self) -> u32 {
+        match self {
+            DataKind::Control { length, .. } => *length as u32,
+            DataKind::Bulk { length, .. } => *length,
+            DataKind::Iso { length, .. } => *length as u32,
+            DataKind::Interrupt { length, .. } => *length as u32,
+            DataKind::BufferedBulk { length, .. } => *length,
+        }
+    }
+
+    fn label(&self) -> &'static str {
+        match self {
+            DataKind::Control { .. } => "ControlPacket",
+            DataKind::Bulk { .. } => "BulkPacket",
+            DataKind::Iso { .. } => "IsoPacket",
+            DataKind::Interrupt { .. } => "InterruptPacket",
+            DataKind::BufferedBulk { .. } => "BufferedBulkPacket",
+        }
+    }
+}
+
+/// A USB data transfer packet, with shared fields and a type-specific [`DataKind`].
+///
+/// All data packets carry an `id` (correlation identifier), `endpoint`,
+/// `status`, variable-length `data`, and type-specific header fields in `kind`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DataPacket {
+    /// Correlation identifier chosen by the requester.
+    pub id: u64,
+    /// USB endpoint address.
+    pub endpoint: Endpoint,
+    /// Transfer completion status.
+    pub status: Status,
+    /// Type-specific header fields.
+    pub kind: DataKind,
+    /// Payload bytes.
+    pub data: Bytes,
+}
+
+impl core::fmt::Display for DataPacket {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "{}(id={}, {}, status={:?}, data={}B)",
+            self.kind.label(),
+            self.id,
+            self.endpoint,
+            self.status,
+            self.data.len()
+        )
+    }
+}
+
+impl DataPacket {
+    /// Create a control transfer packet.
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub fn control(
+        id: u64,
+        endpoint: Endpoint,
+        request: u8,
+        requesttype: u8,
+        status: Status,
+        value: u16,
+        index: u16,
+        length: u16,
+        data: impl Into<Bytes>,
+    ) -> Self {
+        Self {
+            id,
+            endpoint,
+            status,
+            kind: DataKind::Control {
+                request,
+                requesttype,
+                value,
+                index,
+                length,
+            },
+            data: data.into(),
+        }
+    }
+
+    /// Create a bulk transfer packet.
+    #[must_use]
+    pub fn bulk(
+        id: u64,
+        endpoint: Endpoint,
+        status: Status,
+        length: u32,
+        stream_id: u32,
+        data: impl Into<Bytes>,
+    ) -> Self {
+        Self {
+            id,
+            endpoint,
+            status,
+            kind: DataKind::Bulk { length, stream_id },
+            data: data.into(),
+        }
+    }
+
+    /// Create an isochronous transfer packet.
+    #[must_use]
+    pub fn iso(
+        id: u64,
+        endpoint: Endpoint,
+        status: Status,
+        length: u16,
+        data: impl Into<Bytes>,
+    ) -> Self {
+        Self {
+            id,
+            endpoint,
+            status,
+            kind: DataKind::Iso { length },
+            data: data.into(),
+        }
+    }
+
+    /// Create an interrupt transfer packet.
+    #[must_use]
+    pub fn interrupt(
+        id: u64,
+        endpoint: Endpoint,
+        status: Status,
+        length: u16,
+        data: impl Into<Bytes>,
+    ) -> Self {
+        Self {
+            id,
+            endpoint,
+            status,
+            kind: DataKind::Interrupt { length },
+            data: data.into(),
+        }
+    }
+
+    /// Create a buffered bulk transfer packet.
+    #[must_use]
+    pub fn buffered_bulk(
+        id: u64,
+        stream_id: u32,
+        length: u32,
+        endpoint: Endpoint,
+        status: Status,
+        data: impl Into<Bytes>,
+    ) -> Self {
+        Self {
+            id,
+            endpoint,
+            status,
+            kind: DataKind::BufferedBulk { stream_id, length },
+            data: data.into(),
+        }
+    }
+}
+
 /// A decoded usbredir protocol packet.
 ///
 /// The protocol uses a request/response model between a **host** (physical USB
@@ -19,7 +227,7 @@ use crate::proto::{Endpoint, Speed, Status, TransferType};
 /// |----------|-----------|-------------|----------|
 /// | **Connection-wide** | No | No | `Hello`, `DeviceConnect`, `DeviceDisconnect` |
 /// | **Request/response** | Yes | No | `SetConfiguration` / `ConfigurationStatus` |
-/// | **Data** | Yes | Yes | `ControlPacket`, `BulkPacket`, `IsoPacket` |
+/// | **Data** | Yes | Yes | [`Data`](Self::Data) ([`DataKind::Control`], [`DataKind::Bulk`], etc.) |
 ///
 /// The `id` is a correlation identifier chosen by the requester so that
 /// responses can be matched to requests.
@@ -173,61 +381,9 @@ pub enum Packet {
     },
 
     // ── Data packets (id + header fields + payload) ─────────────────────
-    /// USB control transfer (endpoint 0 setup transactions). Bidirectional.
-    ///
-    /// `request`, `requesttype`, `value`, and `index` map directly to the
-    /// fields of a USB SETUP packet (see [USB 2.0 spec §9.3][setup]).
-    ///
-    /// [setup]: https://www.usb.org/document-library/usb-20-specification
-    ControlPacket {
-        id: u64,
-        endpoint: Endpoint,
-        request: u8,
-        requesttype: u8,
-        status: Status,
-        value: u16,
-        index: u16,
-        length: u16,
-        data: Bytes,
-    },
-    /// USB bulk transfer. Bidirectional. Used for large, reliable transfers
-    /// (e.g. mass storage, printing).
-    BulkPacket {
-        id: u64,
-        endpoint: Endpoint,
-        status: Status,
-        length: u32,
-        stream_id: u32,
-        data: Bytes,
-    },
-    /// USB isochronous transfer. Bidirectional. Used for real-time data
-    /// (e.g. audio/video) where occasional data loss is acceptable.
-    IsoPacket {
-        id: u64,
-        endpoint: Endpoint,
-        status: Status,
-        length: u16,
-        data: Bytes,
-    },
-    /// USB interrupt transfer. Bidirectional. Used for small, low-latency
-    /// transfers (e.g. keyboard/mouse input).
-    InterruptPacket {
-        id: u64,
-        endpoint: Endpoint,
-        status: Status,
-        length: u16,
-        data: Bytes,
-    },
-    /// Host → guest: a bulk IN transfer delivered via host-buffered receiving.
-    /// Requires [`Cap::BulkReceiving`](crate::Cap::BulkReceiving).
-    BufferedBulkPacket {
-        id: u64,
-        stream_id: u32,
-        length: u32,
-        endpoint: Endpoint,
-        status: Status,
-        data: Bytes,
-    },
+    /// A USB data transfer packet (control, bulk, isochronous, interrupt,
+    /// or buffered bulk). See [`DataPacket`] and [`DataKind`] for details.
+    Data(DataPacket),
 }
 
 impl core::fmt::Display for Packet {
@@ -367,71 +523,7 @@ impl core::fmt::Display for Packet {
             } => {
                 write!(f, "BulkReceivingStatus(id={id}, status={status:?}, {endpoint}, stream={stream_id})")
             }
-            Packet::ControlPacket {
-                id,
-                endpoint,
-                status,
-                data,
-                ..
-            } => {
-                write!(
-                    f,
-                    "ControlPacket(id={id}, {endpoint}, status={status:?}, data={}B)",
-                    data.len()
-                )
-            }
-            Packet::BulkPacket {
-                id,
-                endpoint,
-                status,
-                data,
-                ..
-            } => {
-                write!(
-                    f,
-                    "BulkPacket(id={id}, {endpoint}, status={status:?}, data={}B)",
-                    data.len()
-                )
-            }
-            Packet::IsoPacket {
-                id,
-                endpoint,
-                status,
-                data,
-                ..
-            } => {
-                write!(
-                    f,
-                    "IsoPacket(id={id}, {endpoint}, status={status:?}, data={}B)",
-                    data.len()
-                )
-            }
-            Packet::InterruptPacket {
-                id,
-                endpoint,
-                status,
-                data,
-                ..
-            } => {
-                write!(
-                    f,
-                    "InterruptPacket(id={id}, {endpoint}, status={status:?}, data={}B)",
-                    data.len()
-                )
-            }
-            Packet::BufferedBulkPacket {
-                id,
-                endpoint,
-                status,
-                data,
-                ..
-            } => {
-                write!(
-                    f,
-                    "BufferedBulkPacket(id={id}, {endpoint}, status={status:?}, data={}B)",
-                    data.len()
-                )
-            }
+            Packet::Data(d) => d.fmt(f),
         }
     }
 }
@@ -470,11 +562,7 @@ impl Packet {
             Packet::StartBulkReceiving { .. } => START_BULK_RECEIVING,
             Packet::StopBulkReceiving { .. } => STOP_BULK_RECEIVING,
             Packet::BulkReceivingStatus { .. } => BULK_RECEIVING_STATUS,
-            Packet::ControlPacket { .. } => CONTROL_PACKET,
-            Packet::BulkPacket { .. } => BULK_PACKET,
-            Packet::IsoPacket { .. } => ISO_PACKET,
-            Packet::InterruptPacket { .. } => INTERRUPT_PACKET,
-            Packet::BufferedBulkPacket { .. } => BUFFERED_BULK_PACKET,
+            Packet::Data(d) => d.kind.packet_type(),
         }
     }
 
@@ -509,12 +597,8 @@ impl Packet {
             | Packet::CancelDataPacket { id, .. }
             | Packet::StartBulkReceiving { id, .. }
             | Packet::StopBulkReceiving { id, .. }
-            | Packet::BulkReceivingStatus { id, .. }
-            | Packet::ControlPacket { id, .. }
-            | Packet::BulkPacket { id, .. }
-            | Packet::IsoPacket { id, .. }
-            | Packet::InterruptPacket { id, .. }
-            | Packet::BufferedBulkPacket { id, .. } => *id,
+            | Packet::BulkReceivingStatus { id, .. } => *id,
+            Packet::Data(d) => d.id,
         }
     }
 
@@ -530,12 +614,8 @@ impl Packet {
             | Packet::InterruptReceivingStatus { endpoint, .. }
             | Packet::StartBulkReceiving { endpoint, .. }
             | Packet::StopBulkReceiving { endpoint, .. }
-            | Packet::BulkReceivingStatus { endpoint, .. }
-            | Packet::ControlPacket { endpoint, .. }
-            | Packet::BulkPacket { endpoint, .. }
-            | Packet::IsoPacket { endpoint, .. }
-            | Packet::InterruptPacket { endpoint, .. }
-            | Packet::BufferedBulkPacket { endpoint, .. } => Some(*endpoint),
+            | Packet::BulkReceivingStatus { endpoint, .. } => Some(*endpoint),
+            Packet::Data(d) => Some(d.endpoint),
             _ => None,
         }
     }
@@ -549,12 +629,8 @@ impl Packet {
             | Packet::IsoStreamStatus { status, .. }
             | Packet::InterruptReceivingStatus { status, .. }
             | Packet::BulkStreamsStatus { status, .. }
-            | Packet::BulkReceivingStatus { status, .. }
-            | Packet::ControlPacket { status, .. }
-            | Packet::BulkPacket { status, .. }
-            | Packet::IsoPacket { status, .. }
-            | Packet::InterruptPacket { status, .. }
-            | Packet::BufferedBulkPacket { status, .. } => Some(*status),
+            | Packet::BulkReceivingStatus { status, .. } => Some(*status),
+            Packet::Data(d) => Some(d.status),
             _ => None,
         }
     }
@@ -563,11 +639,16 @@ impl Packet {
     #[must_use]
     pub fn data(&self) -> Option<&Bytes> {
         match self {
-            Packet::ControlPacket { data, .. }
-            | Packet::BulkPacket { data, .. }
-            | Packet::IsoPacket { data, .. }
-            | Packet::InterruptPacket { data, .. }
-            | Packet::BufferedBulkPacket { data, .. } => Some(data),
+            Packet::Data(d) => Some(&d.data),
+            _ => None,
+        }
+    }
+
+    /// Returns a reference to the [`DataPacket`], if this is a data packet.
+    #[must_use]
+    pub fn as_data(&self) -> Option<&DataPacket> {
+        match self {
+            Packet::Data(d) => Some(d),
             _ => None,
         }
     }
@@ -838,7 +919,7 @@ impl Packet {
         length: u16,
         data: impl Into<Bytes>,
     ) -> Self {
-        Self::ControlPacket {
+        Self::Data(DataPacket::control(
             id,
             endpoint,
             request,
@@ -847,8 +928,8 @@ impl Packet {
             value,
             index,
             length,
-            data: data.into(),
-        }
+            data,
+        ))
     }
 
     /// Create a BulkPacket.
@@ -861,14 +942,7 @@ impl Packet {
         stream_id: u32,
         data: impl Into<Bytes>,
     ) -> Self {
-        Self::BulkPacket {
-            id,
-            endpoint,
-            status,
-            length,
-            stream_id,
-            data: data.into(),
-        }
+        Self::Data(DataPacket::bulk(id, endpoint, status, length, stream_id, data))
     }
 
     /// Create an IsoPacket.
@@ -880,13 +954,7 @@ impl Packet {
         length: u16,
         data: impl Into<Bytes>,
     ) -> Self {
-        Self::IsoPacket {
-            id,
-            endpoint,
-            status,
-            length,
-            data: data.into(),
-        }
+        Self::Data(DataPacket::iso(id, endpoint, status, length, data))
     }
 
     /// Create an InterruptPacket.
@@ -898,13 +966,7 @@ impl Packet {
         length: u16,
         data: impl Into<Bytes>,
     ) -> Self {
-        Self::InterruptPacket {
-            id,
-            endpoint,
-            status,
-            length,
-            data: data.into(),
-        }
+        Self::Data(DataPacket::interrupt(id, endpoint, status, length, data))
     }
 
     /// Create a BufferedBulkPacket.
@@ -917,13 +979,8 @@ impl Packet {
         status: Status,
         data: impl Into<Bytes>,
     ) -> Self {
-        Self::BufferedBulkPacket {
-            id,
-            stream_id,
-            length,
-            endpoint,
-            status,
-            data: data.into(),
-        }
+        Self::Data(DataPacket::buffered_bulk(
+            id, stream_id, length, endpoint, status, data,
+        ))
     }
 }

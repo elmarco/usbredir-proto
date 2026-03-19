@@ -100,7 +100,15 @@ fn arb_data(max_len: usize) -> impl Strategy<Value = Bytes> {
 fn arb_host_sends() -> impl Strategy<Value = Packet> {
     prop_oneof![
         // Device-info packets (host sends device status to guest)
-        (arb_speed(), any::<u8>(), any::<u8>(), any::<u8>(), any::<u16>(), any::<u16>(), any::<u16>())
+        (
+            arb_speed(),
+            any::<u8>(),
+            any::<u8>(),
+            any::<u8>(),
+            any::<u16>(),
+            any::<u16>(),
+            any::<u16>()
+        )
             .prop_map(|(speed, dc, ds, dp, vid, pid, bcd)| {
                 Packet::device_connect(speed, dc, ds, dp, vid, pid, bcd)
             }),
@@ -116,7 +124,12 @@ fn arb_host_sends() -> impl Strategy<Value = Packet> {
             .prop_map(|(id, st, ep)| Packet::interrupt_receiving_status(id, st, ep)),
         (any::<u64>(), any::<u32>(), any::<u32>(), arb_status())
             .prop_map(|(id, eps, ns, st)| Packet::bulk_streams_status(id, eps, ns, st)),
-        (any::<u64>(), any::<u32>(), arb_input_endpoint(), arb_status())
+        (
+            any::<u64>(),
+            any::<u32>(),
+            arb_input_endpoint(),
+            arb_status()
+        )
             .prop_map(|(id, sid, ep, st)| Packet::bulk_receiving_status(id, sid, ep, st)),
     ]
 }
@@ -125,17 +138,14 @@ fn arb_host_sends() -> impl Strategy<Value = Packet> {
 fn arb_guest_sends() -> impl Strategy<Value = Packet> {
     prop_oneof![
         any::<u64>().prop_map(Packet::reset),
-        (any::<u64>(), any::<u8>())
-            .prop_map(|(id, cfg)| Packet::set_configuration(id, cfg)),
+        (any::<u64>(), any::<u8>()).prop_map(|(id, cfg)| Packet::set_configuration(id, cfg)),
         any::<u64>().prop_map(Packet::get_configuration),
         (any::<u64>(), any::<u8>(), any::<u8>())
             .prop_map(|(id, iface, alt)| Packet::set_alt_setting(id, iface, alt)),
-        (any::<u64>(), any::<u8>())
-            .prop_map(|(id, iface)| Packet::get_alt_setting(id, iface)),
+        (any::<u64>(), any::<u8>()).prop_map(|(id, iface)| Packet::get_alt_setting(id, iface)),
         (any::<u64>(), arb_endpoint(), any::<u8>(), any::<u8>())
             .prop_map(|(id, ep, pkts, urbs)| Packet::start_iso_stream(id, ep, pkts, urbs)),
-        (any::<u64>(), arb_endpoint())
-            .prop_map(|(id, ep)| Packet::stop_iso_stream(id, ep)),
+        (any::<u64>(), arb_endpoint()).prop_map(|(id, ep)| Packet::stop_iso_stream(id, ep)),
         (any::<u64>(), arb_input_endpoint())
             .prop_map(|(id, ep)| Packet::start_interrupt_receiving(id, ep)),
         (any::<u64>(), arb_input_endpoint())
@@ -145,9 +155,14 @@ fn arb_guest_sends() -> impl Strategy<Value = Packet> {
         Just(Packet::FilterReject),
         (any::<u64>(), any::<u32>(), any::<u32>())
             .prop_map(|(id, eps, ns)| Packet::alloc_bulk_streams(id, eps, ns)),
-        (any::<u64>(), any::<u32>())
-            .prop_map(|(id, eps)| Packet::free_bulk_streams(id, eps)),
-        (any::<u64>(), any::<u32>(), 1..=65536u32, arb_input_endpoint(), any::<u8>())
+        (any::<u64>(), any::<u32>()).prop_map(|(id, eps)| Packet::free_bulk_streams(id, eps)),
+        (
+            any::<u64>(),
+            any::<u32>(),
+            1..=65536u32,
+            arb_input_endpoint(),
+            any::<u8>()
+        )
             .prop_map(|(id, sid, bpt, ep, nt)| Packet::start_bulk_receiving(id, sid, bpt, ep, nt)),
         (any::<u64>(), any::<u32>(), arb_input_endpoint())
             .prop_map(|(id, sid, ep)| Packet::stop_bulk_receiving(id, sid, ep)),
@@ -159,13 +174,25 @@ fn arb_guest_sends() -> impl Strategy<Value = Packet> {
 fn arb_data_packet_guest_sends() -> impl Strategy<Value = Packet> {
     prop_oneof![
         // ControlPacket with OUT endpoint, no data (guest sends request to device)
-        (any::<u64>(), arb_output_endpoint(), any::<u8>(), any::<u8>(), arb_status(),
-         any::<u16>(), any::<u16>())
+        (
+            any::<u64>(),
+            arb_output_endpoint(),
+            any::<u8>(),
+            any::<u8>(),
+            arb_status(),
+            any::<u16>(),
+            any::<u16>()
+        )
             .prop_map(|(id, ep, req, rtype, st, val, idx)| {
                 Packet::control_packet(id, ep, req, rtype, st, val, idx, 0, Bytes::new())
             }),
         // BulkPacket with OUT endpoint, no data
-        (any::<u64>(), arb_output_endpoint(), arb_status(), any::<u32>())
+        (
+            any::<u64>(),
+            arb_output_endpoint(),
+            arb_status(),
+            any::<u32>()
+        )
             .prop_map(|(id, ep, st, sid)| {
                 Packet::bulk_packet(id, ep, st, 0, sid, Bytes::new())
             }),
@@ -176,26 +203,50 @@ fn arb_data_packet_guest_sends() -> impl Strategy<Value = Packet> {
 fn arb_data_packet_host_sends() -> impl Strategy<Value = Packet> {
     prop_oneof![
         // ControlPacket with IN endpoint + data
-        (any::<u64>(), arb_input_endpoint(), any::<u8>(), any::<u8>(), arb_status(),
-         any::<u16>(), any::<u16>(), arb_data(512))
+        (
+            any::<u64>(),
+            arb_input_endpoint(),
+            any::<u8>(),
+            any::<u8>(),
+            arb_status(),
+            any::<u16>(),
+            any::<u16>(),
+            arb_data(512)
+        )
             .prop_map(|(id, ep, req, rtype, st, val, idx, data)| {
                 let len = data.len() as u16;
                 Packet::control_packet(id, ep, req, rtype, st, val, idx, len, data)
             }),
         // BulkPacket with IN endpoint + data
-        (any::<u64>(), arb_input_endpoint(), arb_status(), any::<u32>(), arb_data(1024))
+        (
+            any::<u64>(),
+            arb_input_endpoint(),
+            arb_status(),
+            any::<u32>(),
+            arb_data(1024)
+        )
             .prop_map(|(id, ep, st, sid, data)| {
                 let len = data.len() as u32;
                 Packet::bulk_packet(id, ep, st, len, sid, data)
             }),
         // IsoPacket with IN endpoint + data (host sends, like device response)
-        (any::<u64>(), arb_input_endpoint(), arb_status(), arb_data(512))
+        (
+            any::<u64>(),
+            arb_input_endpoint(),
+            arb_status(),
+            arb_data(512)
+        )
             .prop_map(|(id, ep, st, data)| {
                 let len = data.len() as u16;
                 Packet::iso_packet(id, ep, st, len, data)
             }),
         // InterruptPacket with IN endpoint + data
-        (any::<u64>(), arb_input_endpoint(), arb_status(), arb_data(512))
+        (
+            any::<u64>(),
+            arb_input_endpoint(),
+            arb_status(),
+            arb_data(512)
+        )
             .prop_map(|(id, ep, st, data)| {
                 let len = data.len() as u16;
                 Packet::interrupt_packet(id, ep, st, len, data)

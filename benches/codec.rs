@@ -55,14 +55,7 @@ fn bench_encode_bulk(c: &mut Criterion) {
     c.bench_function("encode_bulk_1k", |b| {
         b.iter(|| {
             guest
-                .send(Packet::BulkPacket {
-                    id: 1,
-                    endpoint: Endpoint::new(0x02),
-                    status: Status::Success,
-                    length: 1024,
-                    stream_id: 0,
-                    data: data.clone(),
-                })
+                .send(Packet::bulk_packet(1, Endpoint::new(0x02), Status::Success, 1024, 0, data.clone()))
                 .unwrap();
             while guest.drain().is_some() {}
         })
@@ -75,14 +68,7 @@ fn bench_decode_bulk(c: &mut Criterion) {
 
     // Encode a bulk packet to get its wire bytes
     guest
-        .send(Packet::BulkPacket {
-            id: 1,
-            endpoint: Endpoint::new(0x02),
-            status: Status::Success,
-            length: 1024,
-            stream_id: 0,
-            data,
-        })
+        .send(Packet::bulk_packet(1, Endpoint::new(0x02), Status::Success, 1024, 0, data))
         .unwrap();
     let wire = drain_all(&mut guest);
 
@@ -100,17 +86,7 @@ fn bench_encode_control(c: &mut Criterion) {
     c.bench_function("encode_control_no_data", |b| {
         b.iter(|| {
             guest
-                .send(Packet::ControlPacket {
-                    id: 1,
-                    endpoint: Endpoint::new(0x00),
-                    request: 0x09,
-                    requesttype: 0x00,
-                    status: Status::Success,
-                    value: 1,
-                    index: 0,
-                    length: 0,
-                    data: Bytes::new(),
-                })
+                .send(Packet::control_packet(1, Endpoint::new(0x00), 0x09, 0x00, Status::Success, 1, 0, 0, Bytes::new()))
                 .unwrap();
             while guest.drain().is_some() {}
         })
