@@ -5,20 +5,41 @@ use crate::error::FilterError;
 
 use bitflags::bitflags;
 
-/// A single USB device filter rule. `None` fields match any value.
+/// A single USB device filter rule. `None` fields act as wildcards (match any value).
+///
+/// Rules are evaluated in order; the first matching rule wins. This is the
+/// same semantics as the C `usbredirfilter_rule` struct.
+///
+/// # Wire format
+///
+/// On the wire (inside a [`FilterFilter`](crate::Packet::FilterFilter) packet),
+/// rules are encoded as a comma-separated string: `"class,vendor,product,bcd,allow"`.
+/// A value of `-1` means "match any" (`None` in Rust).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FilterRule {
+    /// USB device class code (0x00–0xFF), or `None` to match any class.
     pub device_class: Option<u8>,
+    /// USB vendor ID, or `None` to match any vendor.
     pub vendor_id: Option<u16>,
+    /// USB product ID, or `None` to match any product.
     pub product_id: Option<u16>,
+    /// BCD-encoded device version, or `None` to match any version.
     pub device_version_bcd: Option<u16>,
+    /// `true` = allow the device, `false` = deny it.
     pub allow: bool,
 }
 
 bitflags! {
+    /// Flags for [`check()`] that control filter evaluation behavior.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct CheckFlags: u32 {
+        /// If no rule matches, return [`FilterResult::Allow`] instead of
+        /// [`FilterResult::NoMatch`].
         const DEFAULT_ALLOW = 0x01;
+        /// Do not skip non-boot HID interfaces (class 0x03, subclass 0x00,
+        /// protocol 0x00) during multi-interface filtering. By default these
+        /// are skipped to avoid blocking composite devices that include a
+        /// generic HID interface alongside the primary function.
         const DONT_SKIP_NON_BOOT_HID = 0x02;
     }
 }
@@ -26,8 +47,11 @@ bitflags! {
 /// Result of checking a device against a filter rule set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FilterResult {
+    /// A matching rule explicitly allows the device.
     Allow,
+    /// A matching rule explicitly denies the device.
     Deny,
+    /// No rule matched the device (and `DEFAULT_ALLOW` was not set).
     NoMatch,
 }
 
@@ -202,6 +226,16 @@ fn check1(
 }
 
 /// Check a device against a filter rule set, returning allow/deny/no-match.
+///
+/// Matching proceeds in two stages:
+/// 1. If the device class is not `0x00` (composite) or `0xEF` (miscellaneous /
+///    IAD), check the device-level class against the rules.
+/// 2. Check each interface class against the rules. Non-boot HID interfaces
+///    (class 0x03, subclass 0x00, protocol 0x00) are skipped on multi-interface
+///    devices unless [`CheckFlags::DONT_SKIP_NON_BOOT_HID`] is set.
+///
+/// The first matching rule wins. If no rule matches, the result depends on
+/// [`CheckFlags::DEFAULT_ALLOW`].
 #[allow(clippy::too_many_arguments, clippy::only_used_in_recursion)]
 pub fn check(
     rules: &[FilterRule],
@@ -329,8 +363,7 @@ mod tests {
 
     #[test]
     fn several_trailing_and_empty() {
-        let rules =
-            parse_rules("||||0x03,-1,-1,-1,0|||-1,-1,-1,-1,1||||", ",", "|").unwrap();
+        let rules = parse_rules("||||0x03,-1,-1,-1,0|||-1,-1,-1,-1,1||||", ",", "|").unwrap();
         assert_eq!(rules.len(), 2);
         let s = rules_to_string(&rules, ",", "|").unwrap();
         assert_eq!(s, "0x03,-1,-1,-1,0|-1,-1,-1,-1,1");
@@ -352,8 +385,7 @@ mod tests {
 
     #[test]
     fn multiple_rules_multi_sep() {
-        let rules =
-            parse_rules("\n\t0x03;-1,-1,-1,0\n\n-1,-1,-1;-1;1", ",;", " \t\n").unwrap();
+        let rules = parse_rules("\n\t0x03;-1,-1,-1,0\n\n-1,-1,-1;-1;1", ",;", " \t\n").unwrap();
         assert_eq!(rules.len(), 2);
         let s = rules_to_string(&rules, ",", " ").unwrap();
         assert_eq!(s, "0x03,-1,-1,-1,0 -1,-1,-1,-1,1");

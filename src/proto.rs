@@ -1,8 +1,8 @@
-/// Protocol version constant (0.7.1).
+/// Protocol version constant (0.7.1), as defined in `usb-redirection-protocol.md`.
 pub const USBREDIR_VERSION: u32 = 0x000701;
 /// Maximum allowed bulk transfer payload size (128 MiB).
 pub const MAX_BULK_TRANSFER_SIZE: u32 = 128 * 1024 * 1024;
-/// Maximum total packet size (header overhead + bulk payload).
+/// Maximum total packet size (type-specific header + data payload).
 pub const MAX_PACKET_SIZE: u32 = 1024 + MAX_BULK_TRANSFER_SIZE;
 
 /// Wire packet type IDs matching the C `usb_redir_type` enum.
@@ -45,17 +45,26 @@ pub mod pkt_type {
     pub const BUFFERED_BULK_PACKET: u32 = 104;
 }
 
-/// USB transfer completion status.
+/// USB transfer completion status (maps to `libusb_transfer_status`).
+///
+/// Returned by the host to indicate the outcome of a USB transfer request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 #[repr(u8)]
 pub enum Status {
+    /// Transfer completed without error.
     Success = 0,
+    /// Transfer was cancelled by the host.
     Cancelled = 1,
+    /// Invalid parameter (e.g. bad endpoint, malformed setup packet).
     Inval = 2,
+    /// Low-level I/O error on the host controller.
     IoError = 3,
+    /// Endpoint returned a STALL handshake (often means "unsupported request").
     Stall = 4,
+    /// Transfer did not complete within the allowed time.
     Timeout = 5,
+    /// Device sent more data than expected (overflow condition).
     Babble = 6,
 }
 
@@ -90,15 +99,25 @@ impl TryFrom<u8> for Status {
     }
 }
 
-/// USB endpoint transfer type.
+/// USB endpoint transfer type (see [USB 2.0 spec §5.4–5.7][usbspec]).
+///
+/// Each USB endpoint is configured for exactly one transfer type, which
+/// determines its throughput, latency, and error-handling characteristics.
+///
+/// [usbspec]: https://www.usb.org/document-library/usb-20-specification
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 #[repr(u8)]
 pub enum TransferType {
+    /// Used for device enumeration and configuration (endpoint 0).
     Control = 0,
+    /// Isochronous — guaranteed bandwidth, no retries (audio/video streaming).
     Iso = 1,
+    /// Bulk — reliable, large transfers with no latency guarantee (storage, printing).
     Bulk = 2,
+    /// Interrupt — small, latency-sensitive transfers with guaranteed polling interval (HID, keyboards).
     Interrupt = 3,
+    /// Sentinel for unused endpoint slots in [`EpInfo`](crate::Packet::EpInfo) arrays.
     Invalid = 255,
 }
 
@@ -123,6 +142,7 @@ impl TryFrom<u8> for TransferType {
             1 => Ok(Self::Iso),
             2 => Ok(Self::Bulk),
             3 => Ok(Self::Interrupt),
+            255 => Ok(Self::Invalid),
             _ => Err(v),
         }
     }
@@ -194,15 +214,23 @@ impl core::fmt::Display for Endpoint {
     }
 }
 
-/// USB device speed.
+/// USB device speed class.
+///
+/// Reported by the host in [`DeviceConnect`](crate::Packet::DeviceConnect)
+/// to tell the guest how fast the device operates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 #[repr(u8)]
 pub enum Speed {
+    /// USB 1.0 Low Speed (1.5 Mbit/s).
     Low = 0,
+    /// USB 1.1 Full Speed (12 Mbit/s).
     Full = 1,
+    /// USB 2.0 High Speed (480 Mbit/s).
     High = 2,
+    /// USB 3.x SuperSpeed (5+ Gbit/s).
     Super = 3,
+    /// Speed could not be determined.
     Unknown = 255,
 }
 
@@ -227,6 +255,7 @@ impl TryFrom<u8> for Speed {
             1 => Ok(Self::Full),
             2 => Ok(Self::High),
             3 => Ok(Self::Super),
+            255 => Ok(Self::Unknown),
             _ => Err(v),
         }
     }

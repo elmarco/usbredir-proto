@@ -49,13 +49,33 @@ impl Parser {
         // to_skip
         write_u32(&mut out, self.to_skip() as u32);
 
-        // header_read: we store the pending input that belongs to header parse
-        // In our sans-IO design, unprocessed data is in the input buffer.
-        // For C-compat serialization, we serialize the pending input as header/type_header/data.
-        // Since our parser accumulates all input before parsing, we approximate:
-        // header_read = 0, type_header_read = 0, data_read = 0 (no partial state)
-        // and put write buffers from output queue.
-        write_data(&mut out, &[]); // header (0 bytes)
+        // Partial parse state: the C format stores partially-read header/type_header/data
+        // separately. In our parser, after the header phase completes the header bytes have
+        // been consumed from `input` and the parsed fields are stored in pkt_type/pkt_length/
+        // pkt_id. If we're in Body phase, we must reconstruct the header bytes so that the
+        // unserialized parser (or C) can re-parse from the beginning of the packet.
+        if self.phase() == crate::parser::ParsePhase::Body {
+            // Reconstruct the consumed header so the deserializer sees the full packet
+            let mut hdr_bytes = Vec::new();
+            if self.is_using_32bit_ids() {
+                let hdr = crate::wire::Header32 {
+                    type_: self.pkt_type().into(),
+                    length: self.pkt_length().into(),
+                    id: (self.pkt_id() as u32).into(),
+                };
+                hdr_bytes.extend_from_slice(zerocopy::IntoBytes::as_bytes(&hdr));
+            } else {
+                let hdr = crate::wire::Header {
+                    type_: self.pkt_type().into(),
+                    length: self.pkt_length().into(),
+                    id: self.pkt_id().into(),
+                };
+                hdr_bytes.extend_from_slice(zerocopy::IntoBytes::as_bytes(&hdr));
+            }
+            write_data(&mut out, &hdr_bytes); // header
+        } else {
+            write_data(&mut out, &[]); // header (0 bytes — still in header phase)
+        }
         write_data(&mut out, &[]); // type_header (0 bytes)
         write_data(&mut out, &[]); // data (0 bytes)
 
@@ -94,7 +114,9 @@ impl Parser {
 
         // Verify our_caps is a subset of config.caps
         if !our_caps.is_subset_of(&config.caps) {
-            return Err(Error::Deserialize("caps mismatch: source has caps we don't".into()));
+            return Err(Error::Deserialize(
+                "caps mismatch: source has caps we don't".into(),
+            ));
         }
 
         // peer_caps

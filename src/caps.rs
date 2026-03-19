@@ -2,16 +2,30 @@
 pub const CAPS_SIZE: usize = 1;
 
 /// Individual protocol capability flags, negotiated via the Hello exchange.
+///
+/// A capability is only *active* when both the host and guest advertise it.
+/// Some capabilities change the wire format of certain packets (e.g. header
+/// size, field widths), so both sides must agree before using the extended
+/// encoding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum Cap {
+    /// USB 3.0 bulk streams support. Adds `max_streams` to `EpInfo`.
+    /// Requires [`EpInfoMaxPacketSize`](Self::EpInfoMaxPacketSize).
     BulkStreams = 0,
+    /// Include `device_version_bcd` in `DeviceConnect` packets.
     ConnectDeviceVersion = 1,
+    /// Enable `FilterFilter` and `FilterReject` packets for device filtering.
     Filter = 2,
+    /// Guest acknowledges device disconnection with `DeviceDisconnectAck`.
     DeviceDisconnectAck = 3,
+    /// Include `max_packet_size` in `EpInfo` packets.
     EpInfoMaxPacketSize = 4,
+    /// Use 64-bit packet IDs (16-byte header) instead of 32-bit (12-byte header).
     Ids64Bits = 5,
+    /// Use 32-bit bulk transfer lengths instead of 16-bit. Allows transfers > 64 KiB.
     BulkLength32Bits = 6,
+    /// Enable `StartBulkReceiving` / `BufferedBulkPacket` for host-buffered bulk IN transfers.
     BulkReceiving = 7,
 }
 

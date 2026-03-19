@@ -26,13 +26,18 @@ use crate::wire;
 /// ```
 #[derive(Debug, Clone)]
 pub struct ParserConfig {
-    /// Version string sent in the Hello packet.
+    /// Version string sent in the Hello packet (e.g. `"my-app 1.0"`).
     pub version: String,
     /// Our advertised capabilities.
     pub caps: Caps,
     /// Whether this parser represents the USB host side.
+    ///
+    /// The protocol enforces directionality: some packets can only be sent
+    /// by the host, others only by the guest. Setting this incorrectly will
+    /// cause send/receive errors.
     pub is_host: bool,
     /// If true, suppress the automatic Hello packet on construction.
+    /// Useful when restoring a parser from serialized state.
     pub no_hello: bool,
 }
 
@@ -501,14 +506,12 @@ impl Parser {
 
                     // Parse header
                     if self.using_32bit_ids() {
-                        let hdr =
-                            wire::Header32::read_from_bytes(&self.input[..hlen]).unwrap();
+                        let hdr = wire::Header32::read_from_bytes(&self.input[..hlen]).unwrap();
                         self.pkt_type = hdr.type_.get();
                         self.pkt_length = hdr.length.get();
                         self.pkt_id = hdr.id.get() as u64;
                     } else {
-                        let hdr =
-                            wire::Header::read_from_bytes(&self.input[..hlen]).unwrap();
+                        let hdr = wire::Header::read_from_bytes(&self.input[..hlen]).unwrap();
                         self.pkt_type = hdr.type_.get();
                         self.pkt_length = hdr.length.get();
                         self.pkt_id = hdr.id.get();
@@ -529,10 +532,11 @@ impl Parser {
                     if self.pkt_length > MAX_PACKET_SIZE {
                         let _ = self.input.split_to(hlen);
                         self.to_skip = self.pkt_length as usize;
-                        self.events.push_back(Event::ParseError(Error::PacketTooLarge {
-                            length: self.pkt_length,
-                            max: MAX_PACKET_SIZE,
-                        }));
+                        self.events
+                            .push_back(Event::ParseError(Error::PacketTooLarge {
+                                length: self.pkt_length,
+                                max: MAX_PACKET_SIZE,
+                            }));
                         continue;
                     }
 
@@ -564,15 +568,18 @@ impl Parser {
                     let type_header = &body[..self.type_header_len];
                     let data = body.slice(self.type_header_len..);
 
-                    match self.decode_packet(type_header, data)
-                        .and_then(|packet| {
-                            self.verify_packet(&packet, false)?;
-                            Ok(packet)
-                        })
-                    {
+                    match self.decode_packet(type_header, data).and_then(|packet| {
+                        self.verify_packet(&packet, false)?;
+                        Ok(packet)
+                    }) {
                         Ok(packet) => {
                             // Intercept hello to store peer caps
-                            if let Packet::Hello { ref caps, ref version, .. } = packet {
+                            if let Packet::Hello {
+                                ref caps,
+                                ref version,
+                                ..
+                            } = packet
+                            {
                                 if self.peer_caps.is_some() {
                                     #[cfg(feature = "tracing")]
                                     tracing::error!("Received second hello message, ignoring");
@@ -624,7 +631,9 @@ impl Parser {
         }
 
         match packet {
-            Packet::InterfaceInfo { interface_count, .. } => {
+            Packet::InterfaceInfo {
+                interface_count, ..
+            } => {
                 if *interface_count > 32 {
                     return Err(Error::InterfaceCountTooLarge(*interface_count));
                 }
@@ -633,7 +642,9 @@ impl Parser {
             | Packet::StopInterruptReceiving { endpoint, .. }
             | Packet::InterruptReceivingStatus { endpoint, .. } => {
                 if endpoint.is_output() {
-                    return Err(Error::NonInputEndpoint { endpoint: *endpoint });
+                    return Err(Error::NonInputEndpoint {
+                        endpoint: *endpoint,
+                    });
                 }
             }
             Packet::FilterReject | Packet::FilterFilter { .. } => {
@@ -671,19 +682,25 @@ impl Parser {
                     });
                 }
                 if endpoint.is_output() {
-                    return Err(Error::NonInputEndpoint { endpoint: *endpoint });
+                    return Err(Error::NonInputEndpoint {
+                        endpoint: *endpoint,
+                    });
                 }
             }
             Packet::StopBulkReceiving { endpoint, .. } => {
                 self.verify_bulk_recv_cap(sending)?;
                 if endpoint.is_output() {
-                    return Err(Error::NonInputEndpoint { endpoint: *endpoint });
+                    return Err(Error::NonInputEndpoint {
+                        endpoint: *endpoint,
+                    });
                 }
             }
             Packet::BulkReceivingStatus { endpoint, .. } => {
                 self.verify_bulk_recv_cap(sending)?;
                 if endpoint.is_output() {
-                    return Err(Error::NonInputEndpoint { endpoint: *endpoint });
+                    return Err(Error::NonInputEndpoint {
+                        endpoint: *endpoint,
+                    });
                 }
             }
             Packet::ControlPacket {
@@ -815,20 +832,28 @@ impl Parser {
             }
         } else {
             if data_len != 0 {
-                return Err(Error::WrongDirection { endpoint: *endpoint });
+                return Err(Error::WrongDirection {
+                    endpoint: *endpoint,
+                });
             }
             // Some types unconditionally reject wrong-direction
             match pkt_type {
                 pkt_type::ISO_PACKET => {
-                    return Err(Error::WrongDirection { endpoint: *endpoint });
+                    return Err(Error::WrongDirection {
+                        endpoint: *endpoint,
+                    });
                 }
                 pkt_type::INTERRUPT_PACKET => {
                     if command_for_host {
-                        return Err(Error::WrongDirection { endpoint: *endpoint });
+                        return Err(Error::WrongDirection {
+                            endpoint: *endpoint,
+                        });
                     }
                 }
                 pkt_type::BUFFERED_BULK_PACKET => {
-                    return Err(Error::WrongDirection { endpoint: *endpoint });
+                    return Err(Error::WrongDirection {
+                        endpoint: *endpoint,
+                    });
                 }
                 _ => {}
             }
@@ -902,7 +927,8 @@ impl Parser {
                     let hdr = wire::EpInfoHeader::read_from_bytes(type_header)
                         .map_err(|_| Error::Deserialize("ep info".into()))?;
                     for i in 0..32 {
-                        ep_type[i] = TransferType::try_from(hdr.ep_type[i]).map_err(Error::InvalidEnumValue)?;
+                        ep_type[i] = TransferType::try_from(hdr.ep_type[i])
+                            .map_err(Error::InvalidEnumValue)?;
                         interval[i] = hdr.interval[i];
                         interface[i] = hdr.interface[i];
                         max_packet_size[i] = hdr.max_packet_size[i].get();
@@ -912,7 +938,8 @@ impl Parser {
                     let hdr = wire::EpInfoHeaderNoMaxStreams::read_from_bytes(type_header)
                         .map_err(|_| Error::Deserialize("ep info no streams".into()))?;
                     for i in 0..32 {
-                        ep_type[i] = TransferType::try_from(hdr.ep_type[i]).map_err(Error::InvalidEnumValue)?;
+                        ep_type[i] = TransferType::try_from(hdr.ep_type[i])
+                            .map_err(Error::InvalidEnumValue)?;
                         interval[i] = hdr.interval[i];
                         interface[i] = hdr.interface[i];
                         max_packet_size[i] = hdr.max_packet_size[i].get();
@@ -921,7 +948,8 @@ impl Parser {
                     let hdr = wire::EpInfoHeaderNoMaxPktsz::read_from_bytes(type_header)
                         .map_err(|_| Error::Deserialize("ep info no pktsz".into()))?;
                     for i in 0..32 {
-                        ep_type[i] = TransferType::try_from(hdr.ep_type[i]).map_err(Error::InvalidEnumValue)?;
+                        ep_type[i] = TransferType::try_from(hdr.ep_type[i])
+                            .map_err(Error::InvalidEnumValue)?;
                         interval[i] = hdr.interval[i];
                         interface[i] = hdr.interface[i];
                     }
@@ -1122,8 +1150,7 @@ impl Parser {
                 if self.negotiated(Cap::BulkLength32Bits) {
                     let hdr = wire::BulkPacketHeader::read_from_bytes(type_header)
                         .map_err(|_| Error::Deserialize("bulk pkt".into()))?;
-                    let length =
-                        ((hdr.length_high.get() as u32) << 16) | (hdr.length.get() as u32);
+                    let length = ((hdr.length_high.get() as u32) << 16) | (hdr.length.get() as u32);
                     Ok(Packet::BulkPacket {
                         id,
                         endpoint: Endpoint::new(hdr.endpoint),
@@ -1352,9 +1379,7 @@ impl Parser {
                     configuration: *configuration,
                 });
             }
-            Packet::SetAltSetting {
-                interface, alt, ..
-            } => {
+            Packet::SetAltSetting { interface, alt, .. } => {
                 write_hdr!(wire::SetAltSettingHeader {
                     interface: *interface,
                     alt: *alt,
@@ -1640,6 +1665,22 @@ impl Parser {
 
     pub(crate) fn output_bufs(&self) -> &VecDeque<Bytes> {
         &self.output
+    }
+
+    pub(crate) fn pkt_type(&self) -> u32 {
+        self.pkt_type
+    }
+
+    pub(crate) fn pkt_length(&self) -> u32 {
+        self.pkt_length
+    }
+
+    pub(crate) fn pkt_id(&self) -> u64 {
+        self.pkt_id
+    }
+
+    pub(crate) fn is_using_32bit_ids(&self) -> bool {
+        self.using_32bit_ids()
     }
 
     #[allow(dead_code)]

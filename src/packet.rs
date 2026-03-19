@@ -9,17 +9,35 @@ use crate::proto::{Endpoint, Speed, Status, TransferType};
 
 /// A decoded usbredir protocol packet.
 ///
-/// Variants without an `id` field are connectionwide control messages.
-/// Variants with `id` carry a request/response correlation identifier.
-/// Data packet variants additionally carry a `data: Bytes` payload.
+/// The protocol uses a request/response model between a **host** (physical USB
+/// device) and a **guest** (e.g. a VM). Some packets flow in only one
+/// direction; data packets are bidirectional.
+///
+/// # Packet categories
+///
+/// | Category | `id` field | `data` field | Examples |
+/// |----------|-----------|-------------|----------|
+/// | **Connection-wide** | No | No | `Hello`, `DeviceConnect`, `DeviceDisconnect` |
+/// | **Request/response** | Yes | No | `SetConfiguration` / `ConfigurationStatus` |
+/// | **Data** | Yes | Yes | `ControlPacket`, `BulkPacket`, `IsoPacket` |
+///
+/// The `id` is a correlation identifier chosen by the requester so that
+/// responses can be matched to requests.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Packet {
-    // No id
-    Hello {
-        version: String,
-        caps: Caps,
-    },
+    // ── Connection-wide (no id) ─────────────────────────────────────────
+    /// Initial handshake, exchanged by both sides. Carries a version string
+    /// and the sender's capability bitmask. Automatically sent on
+    /// [`Parser::new()`](crate::Parser::new) unless `no_hello` is set.
+    Hello { version: String, caps: Caps },
+    /// Host → guest: a USB device has been connected.
+    ///
+    /// `device_class` / `device_subclass` / `device_protocol` are the USB
+    /// [class codes](https://www.usb.org/defined-class-codes).
+    /// `vendor_id` and `product_id` identify the device manufacturer/product.
+    /// `device_version_bcd` is the BCD-encoded device release number (requires
+    /// [`Cap::ConnectDeviceVersion`](crate::Cap::ConnectDeviceVersion)).
     DeviceConnect {
         speed: Speed,
         device_class: u8,
@@ -29,7 +47,12 @@ pub enum Packet {
         product_id: u16,
         device_version_bcd: u16,
     },
+    /// Host → guest: the USB device has been disconnected.
     DeviceDisconnect,
+    /// Host → guest: describes the device's USB interfaces (up to 32).
+    ///
+    /// Arrays are indexed by interface number. Only the first
+    /// `interface_count` entries are meaningful.
     InterfaceInfo {
         interface_count: u32,
         interface: [u8; 32],
@@ -37,6 +60,11 @@ pub enum Packet {
         interface_subclass: [u8; 32],
         interface_protocol: [u8; 32],
     },
+    /// Host → guest: describes all 32 endpoint slots.
+    ///
+    /// USB devices have up to 16 endpoints × 2 directions = 32 slots
+    /// (indexed 0x00–0x0F for OUT, 0x80–0x8F for IN). Unused slots have
+    /// `ep_type` set to [`TransferType::Invalid`].
     EpInfo {
         ep_type: [TransferType; 32],
         interval: [u8; 32],
@@ -44,89 +72,85 @@ pub enum Packet {
         max_packet_size: [u16; 32],
         max_streams: [u32; 32],
     },
+    /// Guest → host: the guest rejected the device (e.g. due to filter rules).
+    /// Requires [`Cap::Filter`](crate::Cap::Filter).
     FilterReject,
-    FilterFilter {
-        rules: Vec<FilterRule>,
-    },
+    /// Bidirectional: transmit a set of device filter rules. Requires [`Cap::Filter`](crate::Cap::Filter).
+    FilterFilter { rules: Vec<FilterRule> },
+    /// Guest → host: acknowledges a `DeviceDisconnect`. Requires [`Cap::DeviceDisconnectAck`](crate::Cap::DeviceDisconnectAck).
     DeviceDisconnectAck,
 
-    // With id, no data
-    Reset {
-        id: u64,
-    },
-    SetConfiguration {
-        id: u64,
-        configuration: u8,
-    },
-    GetConfiguration {
-        id: u64,
-    },
+    // ── Request/response (with id, no data) ─────────────────────────────
+    /// Guest → host: reset the USB device.
+    Reset { id: u64 },
+    /// Guest → host: select a USB configuration.
+    SetConfiguration { id: u64, configuration: u8 },
+    /// Guest → host: query the current USB configuration.
+    GetConfiguration { id: u64 },
+    /// Host → guest: response to `SetConfiguration` or `GetConfiguration`.
     ConfigurationStatus {
         id: u64,
         status: Status,
         configuration: u8,
     },
-    SetAltSetting {
-        id: u64,
-        interface: u8,
-        alt: u8,
-    },
-    GetAltSetting {
-        id: u64,
-        interface: u8,
-    },
+    /// Guest → host: select an alternate setting for an interface.
+    SetAltSetting { id: u64, interface: u8, alt: u8 },
+    /// Guest → host: query the current alternate setting for an interface.
+    GetAltSetting { id: u64, interface: u8 },
+    /// Host → guest: response to `SetAltSetting` or `GetAltSetting`.
     AltSettingStatus {
         id: u64,
         status: Status,
         interface: u8,
         alt: u8,
     },
+    /// Guest → host: start an isochronous stream on the given endpoint.
+    ///
+    /// `pkts_per_urb` and `no_urbs` control host-side buffering (URB =
+    /// USB Request Block, the kernel's unit of USB I/O).
     StartIsoStream {
         id: u64,
         endpoint: Endpoint,
         pkts_per_urb: u8,
         no_urbs: u8,
     },
-    StopIsoStream {
-        id: u64,
-        endpoint: Endpoint,
-    },
+    /// Guest → host: stop an isochronous stream.
+    StopIsoStream { id: u64, endpoint: Endpoint },
+    /// Host → guest: response to `StartIsoStream` or `StopIsoStream`.
     IsoStreamStatus {
         id: u64,
         status: Status,
         endpoint: Endpoint,
     },
-    StartInterruptReceiving {
-        id: u64,
-        endpoint: Endpoint,
-    },
-    StopInterruptReceiving {
-        id: u64,
-        endpoint: Endpoint,
-    },
+    /// Guest → host: start forwarding interrupt IN transfers from this endpoint.
+    StartInterruptReceiving { id: u64, endpoint: Endpoint },
+    /// Guest → host: stop forwarding interrupt IN transfers.
+    StopInterruptReceiving { id: u64, endpoint: Endpoint },
+    /// Host → guest: response to `StartInterruptReceiving` / `StopInterruptReceiving`.
     InterruptReceivingStatus {
         id: u64,
         status: Status,
         endpoint: Endpoint,
     },
+    /// Guest → host: allocate USB 3.0 bulk streams on a set of endpoints.
+    /// `endpoints` is a bitmask. Requires [`Cap::BulkStreams`](crate::Cap::BulkStreams).
     AllocBulkStreams {
         id: u64,
         endpoints: u32,
         no_streams: u32,
     },
-    FreeBulkStreams {
-        id: u64,
-        endpoints: u32,
-    },
+    /// Guest → host: free previously allocated bulk streams.
+    FreeBulkStreams { id: u64, endpoints: u32 },
+    /// Host → guest: response to `AllocBulkStreams` / `FreeBulkStreams`.
     BulkStreamsStatus {
         id: u64,
         endpoints: u32,
         no_streams: u32,
         status: Status,
     },
-    CancelDataPacket {
-        id: u64,
-    },
+    /// Guest → host: cancel a pending data transfer identified by `id`.
+    CancelDataPacket { id: u64 },
+    /// Guest → host: start host-buffered bulk IN receiving. Requires [`Cap::BulkReceiving`](crate::Cap::BulkReceiving).
     StartBulkReceiving {
         id: u64,
         stream_id: u32,
@@ -134,11 +158,13 @@ pub enum Packet {
         endpoint: Endpoint,
         no_transfers: u8,
     },
+    /// Guest → host: stop host-buffered bulk IN receiving.
     StopBulkReceiving {
         id: u64,
         stream_id: u32,
         endpoint: Endpoint,
     },
+    /// Host → guest: response to `StartBulkReceiving` / `StopBulkReceiving`.
     BulkReceivingStatus {
         id: u64,
         stream_id: u32,
@@ -146,7 +172,13 @@ pub enum Packet {
         status: Status,
     },
 
-    // Data packets (id + header fields + payload)
+    // ── Data packets (id + header fields + payload) ─────────────────────
+    /// USB control transfer (endpoint 0 setup transactions). Bidirectional.
+    ///
+    /// `request`, `requesttype`, `value`, and `index` map directly to the
+    /// fields of a USB SETUP packet (see [USB 2.0 spec §9.3][setup]).
+    ///
+    /// [setup]: https://www.usb.org/document-library/usb-20-specification
     ControlPacket {
         id: u64,
         endpoint: Endpoint,
@@ -158,6 +190,8 @@ pub enum Packet {
         length: u16,
         data: Bytes,
     },
+    /// USB bulk transfer. Bidirectional. Used for large, reliable transfers
+    /// (e.g. mass storage, printing).
     BulkPacket {
         id: u64,
         endpoint: Endpoint,
@@ -166,6 +200,8 @@ pub enum Packet {
         stream_id: u32,
         data: Bytes,
     },
+    /// USB isochronous transfer. Bidirectional. Used for real-time data
+    /// (e.g. audio/video) where occasional data loss is acceptable.
     IsoPacket {
         id: u64,
         endpoint: Endpoint,
@@ -173,6 +209,8 @@ pub enum Packet {
         length: u16,
         data: Bytes,
     },
+    /// USB interrupt transfer. Bidirectional. Used for small, low-latency
+    /// transfers (e.g. keyboard/mouse input).
     InterruptPacket {
         id: u64,
         endpoint: Endpoint,
@@ -180,6 +218,8 @@ pub enum Packet {
         length: u16,
         data: Bytes,
     },
+    /// Host → guest: a bulk IN transfer delivered via host-buffered receiving.
+    /// Requires [`Cap::BulkReceiving`](crate::Cap::BulkReceiving).
     BufferedBulkPacket {
         id: u64,
         stream_id: u32,
@@ -194,11 +234,21 @@ impl core::fmt::Display for Packet {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Packet::Hello { version, .. } => write!(f, "Hello(version={version:?})"),
-            Packet::DeviceConnect { speed, vendor_id, product_id, .. } => {
-                write!(f, "DeviceConnect(speed={speed:?}, vid={vendor_id:#06x}, pid={product_id:#06x})")
+            Packet::DeviceConnect {
+                speed,
+                vendor_id,
+                product_id,
+                ..
+            } => {
+                write!(
+                    f,
+                    "DeviceConnect(speed={speed:?}, vid={vendor_id:#06x}, pid={product_id:#06x})"
+                )
             }
             Packet::DeviceDisconnect => write!(f, "DeviceDisconnect"),
-            Packet::InterfaceInfo { interface_count, .. } => {
+            Packet::InterfaceInfo {
+                interface_count, ..
+            } => {
                 write!(f, "InterfaceInfo(count={interface_count})")
             }
             Packet::EpInfo { .. } => write!(f, "EpInfo"),
@@ -210,8 +260,15 @@ impl core::fmt::Display for Packet {
                 write!(f, "SetConfiguration(id={id}, config={configuration})")
             }
             Packet::GetConfiguration { id } => write!(f, "GetConfiguration(id={id})"),
-            Packet::ConfigurationStatus { id, status, configuration } => {
-                write!(f, "ConfigurationStatus(id={id}, status={status:?}, config={configuration})")
+            Packet::ConfigurationStatus {
+                id,
+                status,
+                configuration,
+            } => {
+                write!(
+                    f,
+                    "ConfigurationStatus(id={id}, status={status:?}, config={configuration})"
+                )
             }
             Packet::SetAltSetting { id, interface, alt } => {
                 write!(f, "SetAltSetting(id={id}, iface={interface}, alt={alt})")
@@ -219,8 +276,16 @@ impl core::fmt::Display for Packet {
             Packet::GetAltSetting { id, interface } => {
                 write!(f, "GetAltSetting(id={id}, iface={interface})")
             }
-            Packet::AltSettingStatus { id, status, interface, alt } => {
-                write!(f, "AltSettingStatus(id={id}, status={status:?}, iface={interface}, alt={alt})")
+            Packet::AltSettingStatus {
+                id,
+                status,
+                interface,
+                alt,
+            } => {
+                write!(
+                    f,
+                    "AltSettingStatus(id={id}, status={status:?}, iface={interface}, alt={alt})"
+                )
             }
             Packet::StartIsoStream { id, endpoint, .. } => {
                 write!(f, "StartIsoStream(id={id}, {endpoint})")
@@ -228,7 +293,11 @@ impl core::fmt::Display for Packet {
             Packet::StopIsoStream { id, endpoint } => {
                 write!(f, "StopIsoStream(id={id}, {endpoint})")
             }
-            Packet::IsoStreamStatus { id, status, endpoint } => {
+            Packet::IsoStreamStatus {
+                id,
+                status,
+                endpoint,
+            } => {
                 write!(f, "IsoStreamStatus(id={id}, status={status:?}, {endpoint})")
             }
             Packet::StartInterruptReceiving { id, endpoint } => {
@@ -237,42 +306,131 @@ impl core::fmt::Display for Packet {
             Packet::StopInterruptReceiving { id, endpoint } => {
                 write!(f, "StopInterruptReceiving(id={id}, {endpoint})")
             }
-            Packet::InterruptReceivingStatus { id, status, endpoint } => {
-                write!(f, "InterruptReceivingStatus(id={id}, status={status:?}, {endpoint})")
+            Packet::InterruptReceivingStatus {
+                id,
+                status,
+                endpoint,
+            } => {
+                write!(
+                    f,
+                    "InterruptReceivingStatus(id={id}, status={status:?}, {endpoint})"
+                )
             }
-            Packet::AllocBulkStreams { id, endpoints, no_streams } => {
-                write!(f, "AllocBulkStreams(id={id}, eps={endpoints:#x}, streams={no_streams})")
+            Packet::AllocBulkStreams {
+                id,
+                endpoints,
+                no_streams,
+            } => {
+                write!(
+                    f,
+                    "AllocBulkStreams(id={id}, eps={endpoints:#x}, streams={no_streams})"
+                )
             }
             Packet::FreeBulkStreams { id, endpoints } => {
                 write!(f, "FreeBulkStreams(id={id}, eps={endpoints:#x})")
             }
-            Packet::BulkStreamsStatus { id, status, endpoints, no_streams } => {
+            Packet::BulkStreamsStatus {
+                id,
+                status,
+                endpoints,
+                no_streams,
+            } => {
                 write!(f, "BulkStreamsStatus(id={id}, status={status:?}, eps={endpoints:#x}, streams={no_streams})")
             }
             Packet::CancelDataPacket { id } => write!(f, "CancelDataPacket(id={id})"),
-            Packet::StartBulkReceiving { id, endpoint, stream_id, .. } => {
-                write!(f, "StartBulkReceiving(id={id}, {endpoint}, stream={stream_id})")
+            Packet::StartBulkReceiving {
+                id,
+                endpoint,
+                stream_id,
+                ..
+            } => {
+                write!(
+                    f,
+                    "StartBulkReceiving(id={id}, {endpoint}, stream={stream_id})"
+                )
             }
-            Packet::StopBulkReceiving { id, endpoint, stream_id } => {
-                write!(f, "StopBulkReceiving(id={id}, {endpoint}, stream={stream_id})")
+            Packet::StopBulkReceiving {
+                id,
+                endpoint,
+                stream_id,
+            } => {
+                write!(
+                    f,
+                    "StopBulkReceiving(id={id}, {endpoint}, stream={stream_id})"
+                )
             }
-            Packet::BulkReceivingStatus { id, status, endpoint, stream_id } => {
+            Packet::BulkReceivingStatus {
+                id,
+                status,
+                endpoint,
+                stream_id,
+            } => {
                 write!(f, "BulkReceivingStatus(id={id}, status={status:?}, {endpoint}, stream={stream_id})")
             }
-            Packet::ControlPacket { id, endpoint, status, data, .. } => {
-                write!(f, "ControlPacket(id={id}, {endpoint}, status={status:?}, data={}B)", data.len())
+            Packet::ControlPacket {
+                id,
+                endpoint,
+                status,
+                data,
+                ..
+            } => {
+                write!(
+                    f,
+                    "ControlPacket(id={id}, {endpoint}, status={status:?}, data={}B)",
+                    data.len()
+                )
             }
-            Packet::BulkPacket { id, endpoint, status, data, .. } => {
-                write!(f, "BulkPacket(id={id}, {endpoint}, status={status:?}, data={}B)", data.len())
+            Packet::BulkPacket {
+                id,
+                endpoint,
+                status,
+                data,
+                ..
+            } => {
+                write!(
+                    f,
+                    "BulkPacket(id={id}, {endpoint}, status={status:?}, data={}B)",
+                    data.len()
+                )
             }
-            Packet::IsoPacket { id, endpoint, status, data, .. } => {
-                write!(f, "IsoPacket(id={id}, {endpoint}, status={status:?}, data={}B)", data.len())
+            Packet::IsoPacket {
+                id,
+                endpoint,
+                status,
+                data,
+                ..
+            } => {
+                write!(
+                    f,
+                    "IsoPacket(id={id}, {endpoint}, status={status:?}, data={}B)",
+                    data.len()
+                )
             }
-            Packet::InterruptPacket { id, endpoint, status, data, .. } => {
-                write!(f, "InterruptPacket(id={id}, {endpoint}, status={status:?}, data={}B)", data.len())
+            Packet::InterruptPacket {
+                id,
+                endpoint,
+                status,
+                data,
+                ..
+            } => {
+                write!(
+                    f,
+                    "InterruptPacket(id={id}, {endpoint}, status={status:?}, data={}B)",
+                    data.len()
+                )
             }
-            Packet::BufferedBulkPacket { id, endpoint, status, data, .. } => {
-                write!(f, "BufferedBulkPacket(id={id}, {endpoint}, status={status:?}, data={}B)", data.len())
+            Packet::BufferedBulkPacket {
+                id,
+                endpoint,
+                status,
+                data,
+                ..
+            } => {
+                write!(
+                    f,
+                    "BufferedBulkPacket(id={id}, {endpoint}, status={status:?}, data={}B)",
+                    data.len()
+                )
             }
         }
     }
@@ -419,7 +577,10 @@ impl Packet {
     /// Create a Hello packet.
     #[must_use]
     pub fn hello(version: impl Into<String>, caps: Caps) -> Self {
-        Self::Hello { version: version.into(), caps }
+        Self::Hello {
+            version: version.into(),
+            caps,
+        }
     }
 
     /// Create a DeviceConnect packet.
@@ -434,8 +595,13 @@ impl Packet {
         device_version_bcd: u16,
     ) -> Self {
         Self::DeviceConnect {
-            speed, device_class, device_subclass, device_protocol,
-            vendor_id, product_id, device_version_bcd,
+            speed,
+            device_class,
+            device_subclass,
+            device_protocol,
+            vendor_id,
+            product_id,
+            device_version_bcd,
         }
     }
 
@@ -449,8 +615,11 @@ impl Packet {
         interface_protocol: [u8; 32],
     ) -> Self {
         Self::InterfaceInfo {
-            interface_count, interface, interface_class,
-            interface_subclass, interface_protocol,
+            interface_count,
+            interface,
+            interface_class,
+            interface_subclass,
+            interface_protocol,
         }
     }
 
@@ -463,7 +632,13 @@ impl Packet {
         max_packet_size: [u16; 32],
         max_streams: [u32; 32],
     ) -> Self {
-        Self::EpInfo { ep_type, interval, interface, max_packet_size, max_streams }
+        Self::EpInfo {
+            ep_type,
+            interval,
+            interface,
+            max_packet_size,
+            max_streams,
+        }
     }
 
     /// Create a FilterFilter packet.
@@ -493,7 +668,11 @@ impl Packet {
     /// Create a ConfigurationStatus packet.
     #[must_use]
     pub fn configuration_status(id: u64, status: Status, configuration: u8) -> Self {
-        Self::ConfigurationStatus { id, status, configuration }
+        Self::ConfigurationStatus {
+            id,
+            status,
+            configuration,
+        }
     }
 
     /// Create a SetAltSetting packet.
@@ -511,13 +690,23 @@ impl Packet {
     /// Create an AltSettingStatus packet.
     #[must_use]
     pub fn alt_setting_status(id: u64, status: Status, interface: u8, alt: u8) -> Self {
-        Self::AltSettingStatus { id, status, interface, alt }
+        Self::AltSettingStatus {
+            id,
+            status,
+            interface,
+            alt,
+        }
     }
 
     /// Create a StartIsoStream packet.
     #[must_use]
     pub fn start_iso_stream(id: u64, endpoint: Endpoint, pkts_per_urb: u8, no_urbs: u8) -> Self {
-        Self::StartIsoStream { id, endpoint, pkts_per_urb, no_urbs }
+        Self::StartIsoStream {
+            id,
+            endpoint,
+            pkts_per_urb,
+            no_urbs,
+        }
     }
 
     /// Create a StopIsoStream packet.
@@ -529,7 +718,11 @@ impl Packet {
     /// Create an IsoStreamStatus packet.
     #[must_use]
     pub fn iso_stream_status(id: u64, status: Status, endpoint: Endpoint) -> Self {
-        Self::IsoStreamStatus { id, status, endpoint }
+        Self::IsoStreamStatus {
+            id,
+            status,
+            endpoint,
+        }
     }
 
     /// Create a StartInterruptReceiving packet.
@@ -547,13 +740,21 @@ impl Packet {
     /// Create an InterruptReceivingStatus packet.
     #[must_use]
     pub fn interrupt_receiving_status(id: u64, status: Status, endpoint: Endpoint) -> Self {
-        Self::InterruptReceivingStatus { id, status, endpoint }
+        Self::InterruptReceivingStatus {
+            id,
+            status,
+            endpoint,
+        }
     }
 
     /// Create an AllocBulkStreams packet.
     #[must_use]
     pub fn alloc_bulk_streams(id: u64, endpoints: u32, no_streams: u32) -> Self {
-        Self::AllocBulkStreams { id, endpoints, no_streams }
+        Self::AllocBulkStreams {
+            id,
+            endpoints,
+            no_streams,
+        }
     }
 
     /// Create a FreeBulkStreams packet.
@@ -565,7 +766,12 @@ impl Packet {
     /// Create a BulkStreamsStatus packet.
     #[must_use]
     pub fn bulk_streams_status(id: u64, endpoints: u32, no_streams: u32, status: Status) -> Self {
-        Self::BulkStreamsStatus { id, endpoints, no_streams, status }
+        Self::BulkStreamsStatus {
+            id,
+            endpoints,
+            no_streams,
+            status,
+        }
     }
 
     /// Create a CancelDataPacket packet.
@@ -583,19 +789,39 @@ impl Packet {
         endpoint: Endpoint,
         no_transfers: u8,
     ) -> Self {
-        Self::StartBulkReceiving { id, stream_id, bytes_per_transfer, endpoint, no_transfers }
+        Self::StartBulkReceiving {
+            id,
+            stream_id,
+            bytes_per_transfer,
+            endpoint,
+            no_transfers,
+        }
     }
 
     /// Create a StopBulkReceiving packet.
     #[must_use]
     pub fn stop_bulk_receiving(id: u64, stream_id: u32, endpoint: Endpoint) -> Self {
-        Self::StopBulkReceiving { id, stream_id, endpoint }
+        Self::StopBulkReceiving {
+            id,
+            stream_id,
+            endpoint,
+        }
     }
 
     /// Create a BulkReceivingStatus packet.
     #[must_use]
-    pub fn bulk_receiving_status(id: u64, stream_id: u32, endpoint: Endpoint, status: Status) -> Self {
-        Self::BulkReceivingStatus { id, stream_id, endpoint, status }
+    pub fn bulk_receiving_status(
+        id: u64,
+        stream_id: u32,
+        endpoint: Endpoint,
+        status: Status,
+    ) -> Self {
+        Self::BulkReceivingStatus {
+            id,
+            stream_id,
+            endpoint,
+            status,
+        }
     }
 
     /// Create a ControlPacket.
@@ -613,8 +839,15 @@ impl Packet {
         data: impl Into<Bytes>,
     ) -> Self {
         Self::ControlPacket {
-            id, endpoint, request, requesttype, status,
-            value, index, length, data: data.into(),
+            id,
+            endpoint,
+            request,
+            requesttype,
+            status,
+            value,
+            index,
+            length,
+            data: data.into(),
         }
     }
 
@@ -628,7 +861,14 @@ impl Packet {
         stream_id: u32,
         data: impl Into<Bytes>,
     ) -> Self {
-        Self::BulkPacket { id, endpoint, status, length, stream_id, data: data.into() }
+        Self::BulkPacket {
+            id,
+            endpoint,
+            status,
+            length,
+            stream_id,
+            data: data.into(),
+        }
     }
 
     /// Create an IsoPacket.
@@ -640,7 +880,13 @@ impl Packet {
         length: u16,
         data: impl Into<Bytes>,
     ) -> Self {
-        Self::IsoPacket { id, endpoint, status, length, data: data.into() }
+        Self::IsoPacket {
+            id,
+            endpoint,
+            status,
+            length,
+            data: data.into(),
+        }
     }
 
     /// Create an InterruptPacket.
@@ -652,7 +898,13 @@ impl Packet {
         length: u16,
         data: impl Into<Bytes>,
     ) -> Self {
-        Self::InterruptPacket { id, endpoint, status, length, data: data.into() }
+        Self::InterruptPacket {
+            id,
+            endpoint,
+            status,
+            length,
+            data: data.into(),
+        }
     }
 
     /// Create a BufferedBulkPacket.
@@ -665,6 +917,13 @@ impl Packet {
         status: Status,
         data: impl Into<Bytes>,
     ) -> Self {
-        Self::BufferedBulkPacket { id, stream_id, length, endpoint, status, data: data.into() }
+        Self::BufferedBulkPacket {
+            id,
+            stream_id,
+            length,
+            endpoint,
+            status,
+            data: data.into(),
+        }
     }
 }
