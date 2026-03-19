@@ -360,6 +360,60 @@ impl Packet {
         }
     }
 
+    /// Returns the endpoint address, if this packet type carries one.
+    #[must_use]
+    pub fn endpoint(&self) -> Option<Endpoint> {
+        match self {
+            Packet::StartIsoStream { endpoint, .. }
+            | Packet::StopIsoStream { endpoint, .. }
+            | Packet::IsoStreamStatus { endpoint, .. }
+            | Packet::StartInterruptReceiving { endpoint, .. }
+            | Packet::StopInterruptReceiving { endpoint, .. }
+            | Packet::InterruptReceivingStatus { endpoint, .. }
+            | Packet::StartBulkReceiving { endpoint, .. }
+            | Packet::StopBulkReceiving { endpoint, .. }
+            | Packet::BulkReceivingStatus { endpoint, .. }
+            | Packet::ControlPacket { endpoint, .. }
+            | Packet::BulkPacket { endpoint, .. }
+            | Packet::IsoPacket { endpoint, .. }
+            | Packet::InterruptPacket { endpoint, .. }
+            | Packet::BufferedBulkPacket { endpoint, .. } => Some(*endpoint),
+            _ => None,
+        }
+    }
+
+    /// Returns the status field, if this packet type carries one.
+    #[must_use]
+    pub fn status(&self) -> Option<Status> {
+        match self {
+            Packet::ConfigurationStatus { status, .. }
+            | Packet::AltSettingStatus { status, .. }
+            | Packet::IsoStreamStatus { status, .. }
+            | Packet::InterruptReceivingStatus { status, .. }
+            | Packet::BulkStreamsStatus { status, .. }
+            | Packet::BulkReceivingStatus { status, .. }
+            | Packet::ControlPacket { status, .. }
+            | Packet::BulkPacket { status, .. }
+            | Packet::IsoPacket { status, .. }
+            | Packet::InterruptPacket { status, .. }
+            | Packet::BufferedBulkPacket { status, .. } => Some(*status),
+            _ => None,
+        }
+    }
+
+    /// Returns the data payload, if this is a data packet.
+    #[must_use]
+    pub fn data(&self) -> Option<&Bytes> {
+        match self {
+            Packet::ControlPacket { data, .. }
+            | Packet::BulkPacket { data, .. }
+            | Packet::IsoPacket { data, .. }
+            | Packet::InterruptPacket { data, .. }
+            | Packet::BufferedBulkPacket { data, .. } => Some(data),
+            _ => None,
+        }
+    }
+
     // -- Helper constructors --
 
     /// Create a Hello packet.
