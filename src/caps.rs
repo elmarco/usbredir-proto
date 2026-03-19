@@ -30,6 +30,13 @@ impl Caps {
         Self::default()
     }
 
+    /// Enable a capability, returning `self` for chaining.
+    #[must_use]
+    pub fn with(mut self, cap: Cap) -> Self {
+        self.set(cap);
+        self
+    }
+
     pub fn set(&mut self, cap: Cap) {
         let idx = cap as u32;
         self.bits[(idx / 32) as usize] |= 1 << (idx % 32);
