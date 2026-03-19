@@ -2,6 +2,7 @@
 name = "usbredir-proto"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.82"
 description = "Sans-IO Rust implementation of the usbredir binary protocol"
 license = "LGPL-2.1-or-later"
 
