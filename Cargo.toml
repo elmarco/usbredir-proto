@@ -1,0 +1,15 @@
+[package]
+name = "usbredir-proto"
+version = "0.1.0"
+edition = "2021"
+description = "Sans-IO Rust implementation of the usbredir binary protocol"
+license = "LGPL-2.1-or-later"
+
+[dependencies]
+bytes = "1"
+zerocopy = { version = "0.8", features = ["derive"] }
+bitflags = "2"
+thiserror = "2"
+
+[dev-dependencies]
+usbredirparser-sys = "0.4"
