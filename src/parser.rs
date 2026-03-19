@@ -141,6 +141,21 @@ pub struct Parser {
     output_total_size: u64,
 }
 
+impl core::fmt::Debug for Parser {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Parser")
+            .field("is_host", &self.config.is_host)
+            .field("our_caps", &self.our_caps)
+            .field("peer_caps", &self.peer_caps)
+            .field("phase", &self.phase)
+            .field("input_bytes", &self.input.len())
+            .field("pending_events", &self.events.len())
+            .field("output_bufs", &self.output.len())
+            .field("output_bytes", &self.output_total_size)
+            .finish()
+    }
+}
+
 impl Parser {
     /// Create a new parser. Unless `config.no_hello` is set, a Hello packet
     /// is automatically queued for output.
