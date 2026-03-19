@@ -46,6 +46,9 @@ pub mod proto;
 pub mod serializer;
 pub(crate) mod wire;
 
+#[cfg(feature = "tokio")]
+pub mod codec;
+
 pub use caps::{Cap, Caps};
 pub use error::{Error, FilterError, Result};
 pub use filter::{CheckFlags, FilterResult, FilterRule};

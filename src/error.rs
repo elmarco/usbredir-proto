@@ -37,6 +37,9 @@ pub enum Error {
     NonInputEndpoint { endpoint: Endpoint },
     #[error("filter error: {0}")]
     Filter(#[from] FilterError),
+    #[cfg(feature = "std")]
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 /// Errors from filter rule parsing or verification.
