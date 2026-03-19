@@ -2,6 +2,7 @@ use crate::error::FilterError;
 
 use bitflags::bitflags;
 
+/// A single USB device filter rule. `None` fields match any value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FilterRule {
     pub device_class: Option<u8>,
@@ -19,6 +20,7 @@ bitflags! {
     }
 }
 
+/// Result of checking a device against a filter rule set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FilterResult {
     Allow,
@@ -26,6 +28,7 @@ pub enum FilterResult {
     NoMatch,
 }
 
+/// Parse filter rules from a string with the given token and rule separators.
 pub fn parse_rules(
     filter_str: &str,
     token_sep: &str,
@@ -113,6 +116,7 @@ fn verify_single_rule(_rule: &FilterRule) -> Result<(), FilterError> {
     Ok(())
 }
 
+/// Verify that all rules have valid field ranges.
 pub fn verify_rules(rules: &[FilterRule]) -> Result<(), FilterError> {
     for rule in rules {
         verify_single_rule(rule)?;
@@ -120,6 +124,7 @@ pub fn verify_rules(rules: &[FilterRule]) -> Result<(), FilterError> {
     Ok(())
 }
 
+/// Serialize filter rules back to a string.
 pub fn rules_to_string(
     rules: &[FilterRule],
     token_sep: &str,
@@ -191,6 +196,7 @@ fn check1(
     }
 }
 
+/// Check a device against a filter rule set, returning allow/deny/no-match.
 pub fn check(
     rules: &[FilterRule],
     device_class: u8,

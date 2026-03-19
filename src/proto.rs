@@ -1,7 +1,11 @@
+/// Protocol version constant (0.7.1).
 pub const USBREDIR_VERSION: u32 = 0x000701;
+/// Maximum allowed bulk transfer payload size (128 MiB).
 pub const MAX_BULK_TRANSFER_SIZE: u32 = 128 * 1024 * 1024;
+/// Maximum total packet size (header overhead + bulk payload).
 pub const MAX_PACKET_SIZE: u32 = 1024 + MAX_BULK_TRANSFER_SIZE;
 
+/// Wire packet type IDs matching the C `usb_redir_type` enum.
 pub mod pkt_type {
     // Control packets
     pub const HELLO: u32 = 0;
@@ -41,6 +45,7 @@ pub mod pkt_type {
     pub const BUFFERED_BULK_PACKET: u32 = 104;
 }
 
+/// USB transfer completion status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Status {
@@ -53,21 +58,24 @@ pub enum Status {
     Babble = 6,
 }
 
-impl Status {
-    pub fn from_u8(v: u8) -> Self {
+impl TryFrom<u8> for Status {
+    type Error = u8;
+
+    fn try_from(v: u8) -> std::result::Result<Self, u8> {
         match v {
-            0 => Self::Success,
-            1 => Self::Cancelled,
-            2 => Self::Inval,
-            3 => Self::IoError,
-            4 => Self::Stall,
-            5 => Self::Timeout,
-            6 => Self::Babble,
-            _ => Self::Inval,
+            0 => Ok(Self::Success),
+            1 => Ok(Self::Cancelled),
+            2 => Ok(Self::Inval),
+            3 => Ok(Self::IoError),
+            4 => Ok(Self::Stall),
+            5 => Ok(Self::Timeout),
+            6 => Ok(Self::Babble),
+            _ => Err(v),
         }
     }
 }
 
+/// USB endpoint transfer type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum TransferType {
@@ -78,18 +86,21 @@ pub enum TransferType {
     Invalid = 255,
 }
 
-impl TransferType {
-    pub fn from_u8(v: u8) -> Self {
+impl TryFrom<u8> for TransferType {
+    type Error = u8;
+
+    fn try_from(v: u8) -> std::result::Result<Self, u8> {
         match v {
-            0 => Self::Control,
-            1 => Self::Iso,
-            2 => Self::Bulk,
-            3 => Self::Interrupt,
-            _ => Self::Invalid,
+            0 => Ok(Self::Control),
+            1 => Ok(Self::Iso),
+            2 => Ok(Self::Bulk),
+            3 => Ok(Self::Interrupt),
+            _ => Err(v),
         }
     }
 }
 
+/// USB device speed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Speed {
@@ -100,14 +111,16 @@ pub enum Speed {
     Unknown = 255,
 }
 
-impl Speed {
-    pub fn from_u8(v: u8) -> Self {
+impl TryFrom<u8> for Speed {
+    type Error = u8;
+
+    fn try_from(v: u8) -> std::result::Result<Self, u8> {
         match v {
-            0 => Self::Low,
-            1 => Self::Full,
-            2 => Self::High,
-            3 => Self::Super,
-            _ => Self::Unknown,
+            0 => Ok(Self::Low),
+            1 => Ok(Self::Full),
+            2 => Ok(Self::High),
+            3 => Ok(Self::Super),
+            _ => Err(v),
         }
     }
 }

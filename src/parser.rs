@@ -11,6 +11,7 @@ use crate::proto::pkt_type;
 use crate::proto::{Speed, Status, TransferType, MAX_PACKET_SIZE};
 use crate::wire;
 
+/// Configuration for constructing a [`Parser`].
 #[derive(Debug, Clone)]
 pub struct ParserConfig {
     pub version: String,
@@ -19,6 +20,7 @@ pub struct ParserConfig {
     pub no_hello: bool,
 }
 
+/// Severity level for log messages emitted by the parser.
 #[derive(Debug)]
 pub enum LogLevel {
     Error,
@@ -27,6 +29,7 @@ pub enum LogLevel {
     Debug,
 }
 
+/// An event produced by [`Parser::poll()`] or [`Parser::events()`].
 #[derive(Debug)]
 pub enum Event {
     Packet(Packet),
@@ -40,6 +43,12 @@ pub(crate) enum ParsePhase {
     Body,
 }
 
+/// Sans-IO usbredir protocol parser and encoder.
+///
+/// Feed raw bytes with [`feed()`](Self::feed), then pull decoded packets
+/// with [`poll()`](Self::poll) or [`events()`](Self::events).
+/// Encode outgoing packets with [`send()`](Self::send), then pull the
+/// wire bytes with [`drain()`](Self::drain) or [`drain_output()`](Self::drain_output).
 pub struct Parser {
     config: ParserConfig,
     our_caps: Caps,
@@ -64,6 +73,8 @@ pub struct Parser {
 }
 
 impl Parser {
+    /// Create a new parser. Unless `config.no_hello` is set, a Hello packet
+    /// is automatically queued for output.
     pub fn new(config: ParserConfig) -> Self {
         let mut our_caps = config.caps;
         // Guest side automatically sets device_disconnect_ack
@@ -99,15 +110,17 @@ impl Parser {
         parser
     }
 
-    // Capabilities
+    /// Returns whether our side advertises the given capability.
     pub fn have_cap(&self, cap: Cap) -> bool {
         self.our_caps.has(cap)
     }
 
+    /// Returns whether the peer's Hello has been received yet.
     pub fn have_peer_caps(&self) -> bool {
         self.peer_caps.is_some()
     }
 
+    /// Returns whether the peer advertises the given capability.
     pub fn peer_has_cap(&self, cap: Cap) -> bool {
         self.peer_caps.map_or(false, |p| p.has(cap))
     }
@@ -366,14 +379,21 @@ impl Parser {
         )
     }
 
-    // Sans-IO input
+    /// Push received bytes into the parser. Decoded packets become available
+    /// via [`poll()`](Self::poll) or [`events()`](Self::events).
     pub fn feed(&mut self, data: &[u8]) {
         self.input.extend_from_slice(data);
         self.do_parse();
     }
 
+    /// Pull the next decoded event, or `None` if the queue is empty.
     pub fn poll(&mut self) -> Option<Event> {
         self.events.pop_front()
+    }
+
+    /// Returns an iterator that drains all pending events.
+    pub fn events(&mut self) -> impl Iterator<Item = Event> + '_ {
+        std::iter::from_fn(move || self.events.pop_front())
     }
 
     fn do_parse(&mut self) {
@@ -743,7 +763,7 @@ impl Parser {
                     let hdr = wire::DeviceConnectHeader::read_from_bytes(type_header)
                         .map_err(|_| Error::Deserialize("device connect".into()))?;
                     Ok(Packet::DeviceConnect {
-                        speed: Speed::from_u8(hdr.speed),
+                        speed: Speed::try_from(hdr.speed).map_err(Error::InvalidEnumValue)?,
                         device_class: hdr.device_class,
                         device_subclass: hdr.device_subclass,
                         device_protocol: hdr.device_protocol,
@@ -755,7 +775,7 @@ impl Parser {
                     let hdr = wire::DeviceConnectHeaderNoVersion::read_from_bytes(type_header)
                         .map_err(|_| Error::Deserialize("device connect no ver".into()))?;
                     Ok(Packet::DeviceConnect {
-                        speed: Speed::from_u8(hdr.speed),
+                        speed: Speed::try_from(hdr.speed).map_err(Error::InvalidEnumValue)?,
                         device_class: hdr.device_class,
                         device_subclass: hdr.device_subclass,
                         device_protocol: hdr.device_protocol,
@@ -789,7 +809,7 @@ impl Parser {
                     let hdr = wire::EpInfoHeader::read_from_bytes(type_header)
                         .map_err(|_| Error::Deserialize("ep info".into()))?;
                     for i in 0..32 {
-                        ep_type[i] = TransferType::from_u8(hdr.ep_type[i]);
+                        ep_type[i] = TransferType::try_from(hdr.ep_type[i]).map_err(Error::InvalidEnumValue)?;
                         interval[i] = hdr.interval[i];
                         interface[i] = hdr.interface[i];
                         max_packet_size[i] = hdr.max_packet_size[i].get();
@@ -799,7 +819,7 @@ impl Parser {
                     let hdr = wire::EpInfoHeaderNoMaxStreams::read_from_bytes(type_header)
                         .map_err(|_| Error::Deserialize("ep info no streams".into()))?;
                     for i in 0..32 {
-                        ep_type[i] = TransferType::from_u8(hdr.ep_type[i]);
+                        ep_type[i] = TransferType::try_from(hdr.ep_type[i]).map_err(Error::InvalidEnumValue)?;
                         interval[i] = hdr.interval[i];
                         interface[i] = hdr.interface[i];
                         max_packet_size[i] = hdr.max_packet_size[i].get();
@@ -808,7 +828,7 @@ impl Parser {
                     let hdr = wire::EpInfoHeaderNoMaxPktsz::read_from_bytes(type_header)
                         .map_err(|_| Error::Deserialize("ep info no pktsz".into()))?;
                     for i in 0..32 {
-                        ep_type[i] = TransferType::from_u8(hdr.ep_type[i]);
+                        ep_type[i] = TransferType::try_from(hdr.ep_type[i]).map_err(Error::InvalidEnumValue)?;
                         interval[i] = hdr.interval[i];
                         interface[i] = hdr.interface[i];
                     }
@@ -836,7 +856,7 @@ impl Parser {
                     .map_err(|_| Error::Deserialize("config status".into()))?;
                 Ok(Packet::ConfigurationStatus {
                     id,
-                    status: Status::from_u8(hdr.status),
+                    status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
                     configuration: hdr.configuration,
                 })
             }
@@ -862,7 +882,7 @@ impl Parser {
                     .map_err(|_| Error::Deserialize("alt status".into()))?;
                 Ok(Packet::AltSettingStatus {
                     id,
-                    status: Status::from_u8(hdr.status),
+                    status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
                     interface: hdr.interface,
                     alt: hdr.alt,
                 })
@@ -890,7 +910,7 @@ impl Parser {
                     .map_err(|_| Error::Deserialize("iso status".into()))?;
                 Ok(Packet::IsoStreamStatus {
                     id,
-                    status: Status::from_u8(hdr.status),
+                    status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
                     endpoint: hdr.endpoint,
                 })
             }
@@ -915,7 +935,7 @@ impl Parser {
                     .map_err(|_| Error::Deserialize("int recv status".into()))?;
                 Ok(Packet::InterruptReceivingStatus {
                     id,
-                    status: Status::from_u8(hdr.status),
+                    status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
                     endpoint: hdr.endpoint,
                 })
             }
@@ -943,7 +963,7 @@ impl Parser {
                     id,
                     endpoints: hdr.endpoints.get(),
                     no_streams: hdr.no_streams.get(),
-                    status: Status::from_u8(hdr.status),
+                    status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
                 })
             }
             pkt_type::CANCEL_DATA_PACKET => Ok(Packet::CancelDataPacket { id }),
@@ -987,7 +1007,7 @@ impl Parser {
                     id,
                     stream_id: hdr.stream_id.get(),
                     endpoint: hdr.endpoint,
-                    status: Status::from_u8(hdr.status),
+                    status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
                 })
             }
             pkt_type::CONTROL_PACKET => {
@@ -998,7 +1018,7 @@ impl Parser {
                     endpoint: hdr.endpoint,
                     request: hdr.request,
                     requesttype: hdr.requesttype,
-                    status: Status::from_u8(hdr.status),
+                    status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
                     value: hdr.value.get(),
                     index: hdr.index.get(),
                     length: hdr.length.get(),
@@ -1014,7 +1034,7 @@ impl Parser {
                     Ok(Packet::BulkPacket {
                         id,
                         endpoint: hdr.endpoint,
-                        status: Status::from_u8(hdr.status),
+                        status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
                         length,
                         stream_id: hdr.stream_id.get(),
                         data: Bytes::copy_from_slice(data),
@@ -1025,7 +1045,7 @@ impl Parser {
                     Ok(Packet::BulkPacket {
                         id,
                         endpoint: hdr.endpoint,
-                        status: Status::from_u8(hdr.status),
+                        status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
                         length: hdr.length.get() as u32,
                         stream_id: hdr.stream_id.get(),
                         data: Bytes::copy_from_slice(data),
@@ -1038,7 +1058,7 @@ impl Parser {
                 Ok(Packet::IsoPacket {
                     id,
                     endpoint: hdr.endpoint,
-                    status: Status::from_u8(hdr.status),
+                    status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
                     length: hdr.length.get(),
                     data: Bytes::copy_from_slice(data),
                 })
@@ -1049,7 +1069,7 @@ impl Parser {
                 Ok(Packet::InterruptPacket {
                     id,
                     endpoint: hdr.endpoint,
-                    status: Status::from_u8(hdr.status),
+                    status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
                     length: hdr.length.get(),
                     data: Bytes::copy_from_slice(data),
                 })
@@ -1062,7 +1082,7 @@ impl Parser {
                     stream_id: hdr.stream_id.get(),
                     length: hdr.length.get(),
                     endpoint: hdr.endpoint,
-                    status: Status::from_u8(hdr.status),
+                    status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
                     data: Bytes::copy_from_slice(data),
                 })
             }
@@ -1071,6 +1091,8 @@ impl Parser {
     }
 
     // Sans-IO output
+    /// Encode and enqueue a packet for output. The wire bytes become available
+    /// via [`drain()`](Self::drain) or [`drain_output()`](Self::drain_output).
     pub fn send(&mut self, packet: Packet) -> Result<()> {
         let pkt_type = packet.packet_type();
         let id = packet.id();
@@ -1078,46 +1100,48 @@ impl Parser {
 
         self.verify_packet(&packet, true)?;
 
-        let (type_header_bytes, data_bytes) = self.encode_packet(&packet)?;
-
         let header_len = self.header_len();
-        let total = header_len + type_header_len + data_bytes.len();
+        let mut buf = BytesMut::with_capacity(header_len + type_header_len + 64);
 
-        let mut buf = Vec::with_capacity(total);
+        // Reserve space for the header (we'll patch the length after encoding)
+        let header_start = buf.len();
+        buf.extend_from_slice(&[0u8; 16][..header_len]);
 
-        // Write header
-        let pkt_body_len = (type_header_len + data_bytes.len()) as u32;
+        self.encode_packet_into(&packet, &mut buf)?;
+
+        // Patch the header now that we know the body length
+        let pkt_body_len = (buf.len() - header_start - header_len) as u32;
         if self.using_32bit_ids() {
             let hdr = wire::Header32 {
-                type_: (pkt_type).into(),
+                type_: pkt_type.into(),
                 length: pkt_body_len.into(),
                 id: (id as u32).into(),
             };
-            buf.extend_from_slice(zerocopy::IntoBytes::as_bytes(&hdr));
+            buf[header_start..header_start + header_len]
+                .copy_from_slice(zerocopy::IntoBytes::as_bytes(&hdr));
         } else {
             let hdr = wire::Header {
                 type_: pkt_type.into(),
                 length: pkt_body_len.into(),
                 id: id.into(),
             };
-            buf.extend_from_slice(zerocopy::IntoBytes::as_bytes(&hdr));
+            buf[header_start..header_start + header_len]
+                .copy_from_slice(zerocopy::IntoBytes::as_bytes(&hdr));
         }
 
-        buf.extend_from_slice(&type_header_bytes[..type_header_len]);
-        buf.extend_from_slice(&data_bytes);
-
-        let bytes = Bytes::from(buf);
+        let bytes = buf.freeze();
         self.output_total_size += bytes.len() as u64;
         self.output.push_back(bytes);
 
         Ok(())
     }
 
-    fn encode_packet(&self, packet: &Packet) -> Result<(Vec<u8>, Vec<u8>)> {
-        // Returns (type_header_bytes, data_bytes)
-        // type_header_bytes may be larger than needed; caller uses type_header_len to slice
-        let mut th = vec![0u8; 288]; // max type header size
-        let data;
+    fn encode_packet_into(&self, packet: &Packet, buf: &mut BytesMut) -> Result<()> {
+        macro_rules! write_hdr {
+            ($hdr:expr) => {
+                buf.extend_from_slice(zerocopy::IntoBytes::as_bytes(&$hdr));
+            };
+        }
 
         match packet {
             Packet::Hello { version, caps } => {
@@ -1125,9 +1149,8 @@ impl Parser {
                 let vbytes = version.as_bytes();
                 let len = vbytes.len().min(63);
                 hdr.version[..len].copy_from_slice(&vbytes[..len]);
-                let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                th[..bytes.len()].copy_from_slice(bytes);
-                data = caps.to_le_bytes().to_vec();
+                write_hdr!(hdr);
+                buf.extend_from_slice(&caps.to_le_bytes());
             }
             Packet::DeviceConnect {
                 speed,
@@ -1139,7 +1162,7 @@ impl Parser {
                 device_version_bcd,
             } => {
                 if self.negotiated(Cap::ConnectDeviceVersion) {
-                    let hdr = wire::DeviceConnectHeader {
+                    write_hdr!(wire::DeviceConnectHeader {
                         speed: *speed as u8,
                         device_class: *device_class,
                         device_subclass: *device_subclass,
@@ -1147,26 +1170,19 @@ impl Parser {
                         vendor_id: (*vendor_id).into(),
                         product_id: (*product_id).into(),
                         device_version_bcd: (*device_version_bcd).into(),
-                    };
-                    let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                    th[..bytes.len()].copy_from_slice(bytes);
+                    });
                 } else {
-                    let hdr = wire::DeviceConnectHeaderNoVersion {
+                    write_hdr!(wire::DeviceConnectHeaderNoVersion {
                         speed: *speed as u8,
                         device_class: *device_class,
                         device_subclass: *device_subclass,
                         device_protocol: *device_protocol,
                         vendor_id: (*vendor_id).into(),
                         product_id: (*product_id).into(),
-                    };
-                    let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                    th[..bytes.len()].copy_from_slice(bytes);
+                    });
                 }
-                data = vec![];
             }
-            Packet::DeviceDisconnect => {
-                data = vec![];
-            }
+            Packet::DeviceDisconnect => {}
             Packet::InterfaceInfo {
                 interface_count,
                 interface,
@@ -1174,16 +1190,13 @@ impl Parser {
                 interface_subclass,
                 interface_protocol,
             } => {
-                let hdr = wire::InterfaceInfoHeader {
+                write_hdr!(wire::InterfaceInfoHeader {
                     interface_count: (*interface_count).into(),
                     interface: *interface,
                     interface_class: *interface_class,
                     interface_subclass: *interface_subclass,
                     interface_protocol: *interface_protocol,
-                };
-                let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                th[..bytes.len()].copy_from_slice(bytes);
-                data = vec![];
+                });
             }
             Packet::EpInfo {
                 ep_type,
@@ -1205,8 +1218,7 @@ impl Parser {
                         hdr.max_packet_size[i] = max_packet_size[i].into();
                         hdr.max_streams[i] = max_streams[i].into();
                     }
-                    let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                    th[..bytes.len()].copy_from_slice(bytes);
+                    write_hdr!(hdr);
                 } else if self.negotiated(Cap::EpInfoMaxPacketSize) {
                     let mut hdr = wire::EpInfoHeaderNoMaxStreams {
                         ep_type: [0; 32],
@@ -1218,8 +1230,7 @@ impl Parser {
                         hdr.ep_type[i] = ep_type[i] as u8;
                         hdr.max_packet_size[i] = max_packet_size[i].into();
                     }
-                    let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                    th[..bytes.len()].copy_from_slice(bytes);
+                    write_hdr!(hdr);
                 } else {
                     let mut hdr = wire::EpInfoHeaderNoMaxPktsz {
                         ep_type: [0; 32],
@@ -1229,53 +1240,37 @@ impl Parser {
                     for i in 0..32 {
                         hdr.ep_type[i] = ep_type[i] as u8;
                     }
-                    let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                    th[..bytes.len()].copy_from_slice(bytes);
+                    write_hdr!(hdr);
                 }
-                data = vec![];
             }
             Packet::SetConfiguration { configuration, .. } => {
-                let hdr = wire::SetConfigurationHeader {
+                write_hdr!(wire::SetConfigurationHeader {
                     configuration: *configuration,
-                };
-                let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                th[..bytes.len()].copy_from_slice(bytes);
-                data = vec![];
+                });
             }
-            Packet::GetConfiguration { .. } => {
-                data = vec![];
-            }
+            Packet::GetConfiguration { .. } => {}
             Packet::ConfigurationStatus {
                 status,
                 configuration,
                 ..
             } => {
-                let hdr = wire::ConfigurationStatusHeader {
+                write_hdr!(wire::ConfigurationStatusHeader {
                     status: *status as u8,
                     configuration: *configuration,
-                };
-                let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                th[..bytes.len()].copy_from_slice(bytes);
-                data = vec![];
+                });
             }
             Packet::SetAltSetting {
                 interface, alt, ..
             } => {
-                let hdr = wire::SetAltSettingHeader {
+                write_hdr!(wire::SetAltSettingHeader {
                     interface: *interface,
                     alt: *alt,
-                };
-                let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                th[..bytes.len()].copy_from_slice(bytes);
-                data = vec![];
+                });
             }
             Packet::GetAltSetting { interface, .. } => {
-                let hdr = wire::GetAltSettingHeader {
+                write_hdr!(wire::GetAltSettingHeader {
                     interface: *interface,
-                };
-                let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                th[..bytes.len()].copy_from_slice(bytes);
-                data = vec![];
+                });
             }
             Packet::AltSettingStatus {
                 status,
@@ -1283,14 +1278,11 @@ impl Parser {
                 alt,
                 ..
             } => {
-                let hdr = wire::AltSettingStatusHeader {
+                write_hdr!(wire::AltSettingStatusHeader {
                     status: *status as u8,
                     interface: *interface,
                     alt: *alt,
-                };
-                let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                th[..bytes.len()].copy_from_slice(bytes);
-                data = vec![];
+                });
             }
             Packet::StartIsoStream {
                 endpoint,
@@ -1298,81 +1290,57 @@ impl Parser {
                 no_urbs,
                 ..
             } => {
-                let hdr = wire::StartIsoStreamHeader {
+                write_hdr!(wire::StartIsoStreamHeader {
                     endpoint: *endpoint,
                     pkts_per_urb: *pkts_per_urb,
                     no_urbs: *no_urbs,
-                };
-                let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                th[..bytes.len()].copy_from_slice(bytes);
-                data = vec![];
+                });
             }
             Packet::StopIsoStream { endpoint, .. } => {
-                let hdr = wire::StopIsoStreamHeader {
+                write_hdr!(wire::StopIsoStreamHeader {
                     endpoint: *endpoint,
-                };
-                let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                th[..bytes.len()].copy_from_slice(bytes);
-                data = vec![];
+                });
             }
             Packet::IsoStreamStatus {
                 status, endpoint, ..
             } => {
-                let hdr = wire::IsoStreamStatusHeader {
+                write_hdr!(wire::IsoStreamStatusHeader {
                     status: *status as u8,
                     endpoint: *endpoint,
-                };
-                let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                th[..bytes.len()].copy_from_slice(bytes);
-                data = vec![];
+                });
             }
             Packet::StartInterruptReceiving { endpoint, .. } => {
-                let hdr = wire::StartInterruptReceivingHeader {
+                write_hdr!(wire::StartInterruptReceivingHeader {
                     endpoint: *endpoint,
-                };
-                let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                th[..bytes.len()].copy_from_slice(bytes);
-                data = vec![];
+                });
             }
             Packet::StopInterruptReceiving { endpoint, .. } => {
-                let hdr = wire::StopInterruptReceivingHeader {
+                write_hdr!(wire::StopInterruptReceivingHeader {
                     endpoint: *endpoint,
-                };
-                let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                th[..bytes.len()].copy_from_slice(bytes);
-                data = vec![];
+                });
             }
             Packet::InterruptReceivingStatus {
                 status, endpoint, ..
             } => {
-                let hdr = wire::InterruptReceivingStatusHeader {
+                write_hdr!(wire::InterruptReceivingStatusHeader {
                     status: *status as u8,
                     endpoint: *endpoint,
-                };
-                let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                th[..bytes.len()].copy_from_slice(bytes);
-                data = vec![];
+                });
             }
             Packet::AllocBulkStreams {
                 endpoints,
                 no_streams,
                 ..
             } => {
-                let hdr = wire::AllocBulkStreamsHeader {
+                write_hdr!(wire::AllocBulkStreamsHeader {
                     endpoints: (*endpoints).into(),
                     no_streams: (*no_streams).into(),
-                };
-                let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                th[..bytes.len()].copy_from_slice(bytes);
-                data = vec![];
+                });
             }
             Packet::FreeBulkStreams { endpoints, .. } => {
-                let hdr = wire::FreeBulkStreamsHeader {
+                write_hdr!(wire::FreeBulkStreamsHeader {
                     endpoints: (*endpoints).into(),
-                };
-                let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                th[..bytes.len()].copy_from_slice(bytes);
-                data = vec![];
+                });
             }
             Packet::BulkStreamsStatus {
                 endpoints,
@@ -1380,34 +1348,22 @@ impl Parser {
                 status,
                 ..
             } => {
-                let hdr = wire::BulkStreamsStatusHeader {
+                write_hdr!(wire::BulkStreamsStatusHeader {
                     endpoints: (*endpoints).into(),
                     no_streams: (*no_streams).into(),
                     status: *status as u8,
-                };
-                let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                th[..bytes.len()].copy_from_slice(bytes);
-                data = vec![];
+                });
             }
-            Packet::CancelDataPacket { .. } => {
-                data = vec![];
-            }
-            Packet::Reset { .. } => {
-                data = vec![];
-            }
-            Packet::FilterReject => {
-                data = vec![];
-            }
+            Packet::CancelDataPacket { .. } => {}
+            Packet::Reset { .. } => {}
+            Packet::FilterReject => {}
             Packet::FilterFilter { rules } => {
                 let s = filter::rules_to_string(rules, ",", "|")
                     .map_err(|e| Error::Serialize(e.to_string()))?;
-                let mut d = s.into_bytes();
-                d.push(0); // null terminator
-                data = d;
+                buf.extend_from_slice(s.as_bytes());
+                buf.extend_from_slice(&[0]); // null terminator
             }
-            Packet::DeviceDisconnectAck => {
-                data = vec![];
-            }
+            Packet::DeviceDisconnectAck => {}
             Packet::StartBulkReceiving {
                 stream_id,
                 bytes_per_transfer,
@@ -1415,28 +1371,22 @@ impl Parser {
                 no_transfers,
                 ..
             } => {
-                let hdr = wire::StartBulkReceivingHeader {
+                write_hdr!(wire::StartBulkReceivingHeader {
                     stream_id: (*stream_id).into(),
                     bytes_per_transfer: (*bytes_per_transfer).into(),
                     endpoint: *endpoint,
                     no_transfers: *no_transfers,
-                };
-                let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                th[..bytes.len()].copy_from_slice(bytes);
-                data = vec![];
+                });
             }
             Packet::StopBulkReceiving {
                 stream_id,
                 endpoint,
                 ..
             } => {
-                let hdr = wire::StopBulkReceivingHeader {
+                write_hdr!(wire::StopBulkReceivingHeader {
                     stream_id: (*stream_id).into(),
                     endpoint: *endpoint,
-                };
-                let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                th[..bytes.len()].copy_from_slice(bytes);
-                data = vec![];
+                });
             }
             Packet::BulkReceivingStatus {
                 stream_id,
@@ -1444,14 +1394,11 @@ impl Parser {
                 status,
                 ..
             } => {
-                let hdr = wire::BulkReceivingStatusHeader {
+                write_hdr!(wire::BulkReceivingStatusHeader {
                     stream_id: (*stream_id).into(),
                     endpoint: *endpoint,
                     status: *status as u8,
-                };
-                let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                th[..bytes.len()].copy_from_slice(bytes);
-                data = vec![];
+                });
             }
             Packet::ControlPacket {
                 endpoint,
@@ -1464,7 +1411,7 @@ impl Parser {
                 data: pdata,
                 ..
             } => {
-                let hdr = wire::ControlPacketHeader {
+                write_hdr!(wire::ControlPacketHeader {
                     endpoint: *endpoint,
                     request: *request,
                     requesttype: *requesttype,
@@ -1472,10 +1419,8 @@ impl Parser {
                     value: (*value).into(),
                     index: (*index).into(),
                     length: (*length).into(),
-                };
-                let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                th[..bytes.len()].copy_from_slice(bytes);
-                data = pdata.to_vec();
+                });
+                buf.extend_from_slice(pdata);
             }
             Packet::BulkPacket {
                 endpoint,
@@ -1486,26 +1431,22 @@ impl Parser {
                 ..
             } => {
                 if self.negotiated(Cap::BulkLength32Bits) {
-                    let hdr = wire::BulkPacketHeader {
+                    write_hdr!(wire::BulkPacketHeader {
                         endpoint: *endpoint,
                         status: *status as u8,
                         length: (*length as u16).into(),
                         stream_id: (*stream_id).into(),
                         length_high: ((*length >> 16) as u16).into(),
-                    };
-                    let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                    th[..bytes.len()].copy_from_slice(bytes);
+                    });
                 } else {
-                    let hdr = wire::BulkPacketHeader16BitLength {
+                    write_hdr!(wire::BulkPacketHeader16BitLength {
                         endpoint: *endpoint,
                         status: *status as u8,
                         length: (*length as u16).into(),
                         stream_id: (*stream_id).into(),
-                    };
-                    let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                    th[..bytes.len()].copy_from_slice(bytes);
+                    });
                 }
-                data = pdata.to_vec();
+                buf.extend_from_slice(pdata);
             }
             Packet::IsoPacket {
                 endpoint,
@@ -1514,14 +1455,12 @@ impl Parser {
                 data: pdata,
                 ..
             } => {
-                let hdr = wire::IsoPacketHeader {
+                write_hdr!(wire::IsoPacketHeader {
                     endpoint: *endpoint,
                     status: *status as u8,
                     length: (*length).into(),
-                };
-                let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                th[..bytes.len()].copy_from_slice(bytes);
-                data = pdata.to_vec();
+                });
+                buf.extend_from_slice(pdata);
             }
             Packet::InterruptPacket {
                 endpoint,
@@ -1530,14 +1469,12 @@ impl Parser {
                 data: pdata,
                 ..
             } => {
-                let hdr = wire::InterruptPacketHeader {
+                write_hdr!(wire::InterruptPacketHeader {
                     endpoint: *endpoint,
                     status: *status as u8,
                     length: (*length).into(),
-                };
-                let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                th[..bytes.len()].copy_from_slice(bytes);
-                data = pdata.to_vec();
+                });
+                buf.extend_from_slice(pdata);
             }
             Packet::BufferedBulkPacket {
                 stream_id,
@@ -1547,29 +1484,30 @@ impl Parser {
                 data: pdata,
                 ..
             } => {
-                let hdr = wire::BufferedBulkPacketHeader {
+                write_hdr!(wire::BufferedBulkPacketHeader {
                     stream_id: (*stream_id).into(),
                     length: (*length).into(),
                     endpoint: *endpoint,
                     status: *status as u8,
-                };
-                let bytes = zerocopy::IntoBytes::as_bytes(&hdr);
-                th[..bytes.len()].copy_from_slice(bytes);
-                data = pdata.to_vec();
+                });
+                buf.extend_from_slice(pdata);
             }
         }
 
-        Ok((th, data))
+        Ok(())
     }
 
+    /// Returns `true` if there are encoded bytes waiting to be drained.
     pub fn has_data_to_write(&self) -> bool {
         !self.output.is_empty()
     }
 
+    /// Total byte count of buffered output not yet drained.
     pub fn buffered_output_size(&self) -> u64 {
         self.output_total_size
     }
 
+    /// Pull the next chunk of encoded output bytes, or `None` if empty.
     pub fn drain(&mut self) -> Option<Bytes> {
         if let Some(buf) = self.output.pop_front() {
             self.output_total_size -= buf.len() as u64;
@@ -1577,6 +1515,11 @@ impl Parser {
         } else {
             None
         }
+    }
+
+    /// Returns an iterator that drains all pending output buffers.
+    pub fn drain_output(&mut self) -> impl Iterator<Item = Bytes> + '_ {
+        std::iter::from_fn(move || self.drain())
     }
 
     // Serialization accessors for serializer module

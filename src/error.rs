@@ -1,5 +1,6 @@
 use crate::caps::Cap;
 
+/// Errors returned by the parser during packet encoding, decoding, or verification.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("unknown packet type: {0}")]
@@ -20,6 +21,8 @@ pub enum Error {
     DuplicateHello,
     #[error("interface count too large: {0}")]
     InterfaceCountTooLarge(u32),
+    #[error("invalid enum value: {0}")]
+    InvalidEnumValue(u8),
     #[error("serialize error: {0}")]
     Serialize(String),
     #[error("deserialize error: {0}")]
@@ -32,6 +35,7 @@ pub enum Error {
     Filter(#[from] FilterError),
 }
 
+/// Errors from filter rule parsing or verification.
 #[derive(Debug, thiserror::Error)]
 pub enum FilterError {
     #[error("invalid filter string")]

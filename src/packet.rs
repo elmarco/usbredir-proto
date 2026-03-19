@@ -4,6 +4,11 @@ use crate::caps::Caps;
 use crate::filter::FilterRule;
 use crate::proto::{Speed, Status, TransferType};
 
+/// A decoded usbredir protocol packet.
+///
+/// Variants without an `id` field are connectionwide control messages.
+/// Variants with `id` carry a request/response correlation identifier.
+/// Data packet variants additionally carry a `data: Bytes` payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Packet {
     // No id

@@ -21,6 +21,7 @@ use crate::parser::{Parser, ParserConfig};
 const SERIALIZE_MAGIC: u32 = 0x55525031;
 
 impl Parser {
+    /// Serialize the parser state to a byte buffer (C-compatible format, magic `0x55525031`).
     pub fn serialize(&self) -> Result<Vec<u8>> {
         let mut out = Vec::new();
 
@@ -69,6 +70,8 @@ impl Parser {
         Ok(out)
     }
 
+    /// Restore a parser from serialized state. The `config` must have at least
+    /// the same capabilities as the original parser.
     pub fn unserialize(config: ParserConfig, data: &[u8]) -> Result<Self> {
         let mut pos = 0;
 

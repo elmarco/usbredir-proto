@@ -1,5 +1,7 @@
+/// Number of u32 words in the capabilities bitset.
 pub const CAPS_SIZE: usize = 1;
 
+/// Individual protocol capability flags, negotiated via the Hello exchange.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum Cap {
@@ -13,6 +15,10 @@ pub enum Cap {
     BulkReceiving = 7,
 }
 
+/// Bitset of protocol capabilities, exchanged during the Hello handshake.
+///
+/// Both sides advertise their caps; a capability is "negotiated" (active)
+/// only when both peers have it set.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Caps {
     bits: [u32; CAPS_SIZE],
