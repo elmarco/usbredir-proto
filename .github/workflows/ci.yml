@@ -14,6 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get update && sudo apt-get install -y libusbredirparser-dev
       - run: cargo test --all-features
 
   no-std:
@@ -30,6 +31,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      - run: sudo apt-get update && sudo apt-get install -y libusbredirparser-dev
       - run: cargo clippy --all-targets --all-features -- -D warnings
 
   fmt:
