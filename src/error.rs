@@ -1,3 +1,5 @@
+use alloc::string::String;
+
 use crate::caps::Cap;
 use crate::proto::Endpoint;
 
@@ -49,4 +51,4 @@ pub enum FilterError {
     ValueOutOfRange,
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = core::result::Result<T, Error>;

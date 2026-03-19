@@ -5,11 +5,20 @@ edition = "2021"
 description = "Sans-IO Rust implementation of the usbredir binary protocol"
 license = "LGPL-2.1-or-later"
 
+[features]
+default = ["std"]
+std = ["bytes/std", "thiserror/std"]
+
 [dependencies]
-bytes = "1"
-zerocopy = { version = "0.8", features = ["derive"] }
-bitflags = "2"
-thiserror = "2"
+bytes = { version = "1", default-features = false }
+zerocopy = { version = "0.8", default-features = false, features = ["derive"] }
+bitflags = { version = "2", default-features = false }
+thiserror = { version = "2", default-features = false }
 
 [dev-dependencies]
 usbredirparser-sys = "0.4"
+criterion = "0.5"
+
+[[bench]]
+name = "codec"
+harness = false

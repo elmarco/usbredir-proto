@@ -1,4 +1,6 @@
-use std::collections::VecDeque;
+use alloc::collections::VecDeque;
+use alloc::format;
+use alloc::string::{String, ToString};
 
 use bytes::{Bytes, BytesMut};
 use zerocopy::FromBytes;
@@ -196,9 +198,9 @@ impl Parser {
 
     fn header_len(&self) -> usize {
         if self.using_32bit_ids() {
-            std::mem::size_of::<wire::Header32>()
+            core::mem::size_of::<wire::Header32>()
         } else {
-            std::mem::size_of::<wire::Header>()
+            core::mem::size_of::<wire::Header>()
         }
     }
 
@@ -214,13 +216,13 @@ impl Parser {
         }
 
         let len = match pkt_type {
-            pkt_type::HELLO => std::mem::size_of::<wire::HelloHeader>(),
+            pkt_type::HELLO => core::mem::size_of::<wire::HelloHeader>(),
             pkt_type::DEVICE_CONNECT => {
                 if !command_for_host {
                     if self.negotiated(Cap::ConnectDeviceVersion) {
-                        std::mem::size_of::<wire::DeviceConnectHeader>()
+                        core::mem::size_of::<wire::DeviceConnectHeader>()
                     } else {
-                        std::mem::size_of::<wire::DeviceConnectHeaderNoVersion>()
+                        core::mem::size_of::<wire::DeviceConnectHeaderNoVersion>()
                     }
                 } else {
                     return Err(Error::WrongDirectionPacket);
@@ -242,7 +244,7 @@ impl Parser {
             }
             pkt_type::INTERFACE_INFO => {
                 if !command_for_host {
-                    std::mem::size_of::<wire::InterfaceInfoHeader>()
+                    core::mem::size_of::<wire::InterfaceInfoHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
@@ -250,11 +252,11 @@ impl Parser {
             pkt_type::EP_INFO => {
                 if !command_for_host {
                     if self.negotiated(Cap::BulkStreams) {
-                        std::mem::size_of::<wire::EpInfoHeader>()
+                        core::mem::size_of::<wire::EpInfoHeader>()
                     } else if self.negotiated(Cap::EpInfoMaxPacketSize) {
-                        std::mem::size_of::<wire::EpInfoHeaderNoMaxStreams>()
+                        core::mem::size_of::<wire::EpInfoHeaderNoMaxStreams>()
                     } else {
-                        std::mem::size_of::<wire::EpInfoHeaderNoMaxPktsz>()
+                        core::mem::size_of::<wire::EpInfoHeaderNoMaxPktsz>()
                     }
                 } else {
                     return Err(Error::WrongDirectionPacket);
@@ -262,7 +264,7 @@ impl Parser {
             }
             pkt_type::SET_CONFIGURATION => {
                 if command_for_host {
-                    std::mem::size_of::<wire::SetConfigurationHeader>()
+                    core::mem::size_of::<wire::SetConfigurationHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
@@ -276,91 +278,91 @@ impl Parser {
             }
             pkt_type::CONFIGURATION_STATUS => {
                 if !command_for_host {
-                    std::mem::size_of::<wire::ConfigurationStatusHeader>()
+                    core::mem::size_of::<wire::ConfigurationStatusHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
             pkt_type::SET_ALT_SETTING => {
                 if command_for_host {
-                    std::mem::size_of::<wire::SetAltSettingHeader>()
+                    core::mem::size_of::<wire::SetAltSettingHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
             pkt_type::GET_ALT_SETTING => {
                 if command_for_host {
-                    std::mem::size_of::<wire::GetAltSettingHeader>()
+                    core::mem::size_of::<wire::GetAltSettingHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
             pkt_type::ALT_SETTING_STATUS => {
                 if !command_for_host {
-                    std::mem::size_of::<wire::AltSettingStatusHeader>()
+                    core::mem::size_of::<wire::AltSettingStatusHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
             pkt_type::START_ISO_STREAM => {
                 if command_for_host {
-                    std::mem::size_of::<wire::StartIsoStreamHeader>()
+                    core::mem::size_of::<wire::StartIsoStreamHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
             pkt_type::STOP_ISO_STREAM => {
                 if command_for_host {
-                    std::mem::size_of::<wire::StopIsoStreamHeader>()
+                    core::mem::size_of::<wire::StopIsoStreamHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
             pkt_type::ISO_STREAM_STATUS => {
                 if !command_for_host {
-                    std::mem::size_of::<wire::IsoStreamStatusHeader>()
+                    core::mem::size_of::<wire::IsoStreamStatusHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
             pkt_type::START_INTERRUPT_RECEIVING => {
                 if command_for_host {
-                    std::mem::size_of::<wire::StartInterruptReceivingHeader>()
+                    core::mem::size_of::<wire::StartInterruptReceivingHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
             pkt_type::STOP_INTERRUPT_RECEIVING => {
                 if command_for_host {
-                    std::mem::size_of::<wire::StopInterruptReceivingHeader>()
+                    core::mem::size_of::<wire::StopInterruptReceivingHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
             pkt_type::INTERRUPT_RECEIVING_STATUS => {
                 if !command_for_host {
-                    std::mem::size_of::<wire::InterruptReceivingStatusHeader>()
+                    core::mem::size_of::<wire::InterruptReceivingStatusHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
             pkt_type::ALLOC_BULK_STREAMS => {
                 if command_for_host {
-                    std::mem::size_of::<wire::AllocBulkStreamsHeader>()
+                    core::mem::size_of::<wire::AllocBulkStreamsHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
             pkt_type::FREE_BULK_STREAMS => {
                 if command_for_host {
-                    std::mem::size_of::<wire::FreeBulkStreamsHeader>()
+                    core::mem::size_of::<wire::FreeBulkStreamsHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
             pkt_type::BULK_STREAMS_STATUS => {
                 if !command_for_host {
-                    std::mem::size_of::<wire::BulkStreamsStatusHeader>()
+                    core::mem::size_of::<wire::BulkStreamsStatusHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
@@ -389,38 +391,38 @@ impl Parser {
             }
             pkt_type::START_BULK_RECEIVING => {
                 if command_for_host {
-                    std::mem::size_of::<wire::StartBulkReceivingHeader>()
+                    core::mem::size_of::<wire::StartBulkReceivingHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
             pkt_type::STOP_BULK_RECEIVING => {
                 if command_for_host {
-                    std::mem::size_of::<wire::StopBulkReceivingHeader>()
+                    core::mem::size_of::<wire::StopBulkReceivingHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
             pkt_type::BULK_RECEIVING_STATUS => {
                 if !command_for_host {
-                    std::mem::size_of::<wire::BulkReceivingStatusHeader>()
+                    core::mem::size_of::<wire::BulkReceivingStatusHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            pkt_type::CONTROL_PACKET => std::mem::size_of::<wire::ControlPacketHeader>(),
+            pkt_type::CONTROL_PACKET => core::mem::size_of::<wire::ControlPacketHeader>(),
             pkt_type::BULK_PACKET => {
                 if self.negotiated(Cap::BulkLength32Bits) {
-                    std::mem::size_of::<wire::BulkPacketHeader>()
+                    core::mem::size_of::<wire::BulkPacketHeader>()
                 } else {
-                    std::mem::size_of::<wire::BulkPacketHeader16BitLength>()
+                    core::mem::size_of::<wire::BulkPacketHeader16BitLength>()
                 }
             }
-            pkt_type::ISO_PACKET => std::mem::size_of::<wire::IsoPacketHeader>(),
-            pkt_type::INTERRUPT_PACKET => std::mem::size_of::<wire::InterruptPacketHeader>(),
+            pkt_type::ISO_PACKET => core::mem::size_of::<wire::IsoPacketHeader>(),
+            pkt_type::INTERRUPT_PACKET => core::mem::size_of::<wire::InterruptPacketHeader>(),
             pkt_type::BUFFERED_BULK_PACKET => {
                 if !command_for_host {
-                    std::mem::size_of::<wire::BufferedBulkPacketHeader>()
+                    core::mem::size_of::<wire::BufferedBulkPacketHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
@@ -458,7 +460,7 @@ impl Parser {
 
     /// Returns an iterator that drains all pending events.
     pub fn events(&mut self) -> impl Iterator<Item = Event> + '_ {
-        std::iter::from_fn(move || self.events.pop_front())
+        core::iter::from_fn(move || self.events.pop_front())
     }
 
     fn do_parse(&mut self) {
@@ -816,7 +818,7 @@ impl Parser {
                 let hdr = wire::HelloHeader::read_from_bytes(type_header)
                     .map_err(|_| Error::Deserialize("hello header".into()))?;
                 let version_bytes = &hdr.version;
-                let version = std::str::from_utf8(version_bytes)
+                let version = core::str::from_utf8(version_bytes)
                     .unwrap_or("")
                     .trim_end_matches('\0')
                     .to_string();
@@ -1036,7 +1038,7 @@ impl Parser {
             pkt_type::FILTER_FILTER => {
                 // Data is a null-terminated string of filter rules
                 let s = if !data.is_empty() && data[data.len() - 1] == 0 {
-                    std::str::from_utf8(&data[..data.len() - 1])
+                    core::str::from_utf8(&data[..data.len() - 1])
                         .map_err(|_| Error::Deserialize("filter string".into()))?
                 } else {
                     return Err(Error::Deserialize("filter not null-terminated".into()));
@@ -1584,7 +1586,7 @@ impl Parser {
 
     /// Returns an iterator that drains all pending output buffers.
     pub fn drain_output(&mut self) -> impl Iterator<Item = Bytes> + '_ {
-        std::iter::from_fn(move || self.drain())
+        core::iter::from_fn(move || self.drain())
     }
 
     // Serialization accessors for serializer module

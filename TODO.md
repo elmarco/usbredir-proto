@@ -20,7 +20,7 @@
 
 ## Lower Priority / Polish
 
-- [ ] Fuzz targets — `cargo-fuzz` for parser and filter
-- [ ] `no_std` support — the crate only uses `alloc` features, could work in embedded/kernel contexts
-- [ ] Benchmarks — `criterion` benchmarks for encode/decode throughput
-- [ ] CI — GitHub Actions with `cargo test`, `cargo clippy`, `cargo doc`, MSRV check
+- [x] Fuzz targets — `cargo-fuzz` for parser (`fuzz_parser`) and filter (`fuzz_filter`)
+- [x] `no_std` support — `#![cfg_attr(not(feature = "std"), no_std)]` with `extern crate alloc`; `std` feature on by default
+- [x] Benchmarks — `criterion` benchmarks for encode/decode/roundtrip/filter throughput (`benches/codec.rs`)
+- [x] CI — GitHub Actions with test, no_std check, clippy, rustfmt (`.github/workflows/ci.yml`)

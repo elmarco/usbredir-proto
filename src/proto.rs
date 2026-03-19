@@ -59,8 +59,8 @@ pub enum Status {
     Babble = 6,
 }
 
-impl std::fmt::Display for Status {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Status {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(match self {
             Self::Success => "success",
             Self::Cancelled => "cancelled",
@@ -76,7 +76,7 @@ impl std::fmt::Display for Status {
 impl TryFrom<u8> for Status {
     type Error = u8;
 
-    fn try_from(v: u8) -> std::result::Result<Self, u8> {
+    fn try_from(v: u8) -> core::result::Result<Self, u8> {
         match v {
             0 => Ok(Self::Success),
             1 => Ok(Self::Cancelled),
@@ -102,8 +102,8 @@ pub enum TransferType {
     Invalid = 255,
 }
 
-impl std::fmt::Display for TransferType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for TransferType {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(match self {
             Self::Control => "control",
             Self::Iso => "isochronous",
@@ -117,7 +117,7 @@ impl std::fmt::Display for TransferType {
 impl TryFrom<u8> for TransferType {
     type Error = u8;
 
-    fn try_from(v: u8) -> std::result::Result<Self, u8> {
+    fn try_from(v: u8) -> core::result::Result<Self, u8> {
         match v {
             0 => Ok(Self::Control),
             1 => Ok(Self::Iso),
@@ -187,8 +187,8 @@ impl From<Endpoint> for u8 {
     }
 }
 
-impl std::fmt::Display for Endpoint {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Endpoint {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let dir = if self.is_input() { "IN" } else { "OUT" };
         write!(f, "ep{} {dir}", self.number())
     }
@@ -206,8 +206,8 @@ pub enum Speed {
     Unknown = 255,
 }
 
-impl std::fmt::Display for Speed {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Speed {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(match self {
             Self::Low => "low",
             Self::Full => "full",
@@ -221,7 +221,7 @@ impl std::fmt::Display for Speed {
 impl TryFrom<u8> for Speed {
     type Error = u8;
 
-    fn try_from(v: u8) -> std::result::Result<Self, u8> {
+    fn try_from(v: u8) -> core::result::Result<Self, u8> {
         match v {
             0 => Ok(Self::Low),
             1 => Ok(Self::Full),

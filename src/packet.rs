@@ -1,3 +1,6 @@
+use alloc::string::String;
+use alloc::vec::Vec;
+
 use bytes::Bytes;
 
 use crate::caps::Caps;
@@ -187,8 +190,8 @@ pub enum Packet {
     },
 }
 
-impl std::fmt::Display for Packet {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Packet {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Packet::Hello { version, .. } => write!(f, "Hello(version={version:?})"),
             Packet::DeviceConnect { speed, vendor_id, product_id, .. } => {

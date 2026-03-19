@@ -263,7 +263,7 @@ pub struct BufferedBulkPacketHeader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::mem::size_of;
+    use core::mem::size_of;
 
     #[test]
     fn struct_sizes() {

@@ -12,6 +12,9 @@
 //!   u32 write_buf_count
 //!     (for each write buf: u32 len + bytes)
 
+use alloc::format;
+use alloc::vec::Vec;
+
 use bytes::Bytes;
 
 use crate::caps::Caps;

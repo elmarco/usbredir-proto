@@ -1,3 +1,6 @@
+use alloc::string::String;
+use alloc::vec::Vec;
+
 use crate::error::FilterError;
 
 use bitflags::bitflags;
@@ -138,7 +141,7 @@ pub fn rules_to_string(
     let tsep = token_sep.chars().next().unwrap();
     let rsep = rule_sep.chars().next().unwrap();
 
-    use std::fmt::Write;
+    use core::fmt::Write;
 
     let mut s = String::new();
     for (i, rule) in rules.iter().enumerate() {
