@@ -238,6 +238,13 @@ impl<R: Role> Parser<R> {
             output_total_size: 0,
         };
 
+        #[cfg(feature = "tracing")]
+        tracing::info!(
+            role = if R::IS_HOST { "host" } else { "guest" },
+            ?our_caps,
+            "Parser created"
+        );
+
         if !no_hello {
             let hello = Packet::Hello {
                 version,
@@ -382,6 +389,13 @@ impl<R: Role> Parser<R> {
     pub fn feed(&mut self, data: &[u8]) -> Result<()> {
         if let Some(max) = self.max_input_buffer {
             if self.input.len() + data.len() > max {
+                #[cfg(feature = "tracing")]
+                tracing::warn!(
+                    current = self.input.len(),
+                    incoming = data.len(),
+                    max,
+                    "input buffer full"
+                );
                 return Err(Error::InputBufferFull {
                     current: self.input.len(),
                     incoming: data.len(),
@@ -390,6 +404,8 @@ impl<R: Role> Parser<R> {
             }
         }
         self.input.extend_from_slice(data);
+        #[cfg(feature = "tracing")]
+        tracing::trace!(len = data.len(), buffered = self.input.len(), "feed");
         self.do_parse();
         Ok(())
     }
@@ -471,6 +487,8 @@ impl<R: Role> Parser<R> {
                     let pkt_type = match PktType::try_from(pkt_type_raw) {
                         Ok(t) => t,
                         Err(_) => {
+                            #[cfg(feature = "tracing")]
+                            tracing::warn!(pkt_type_raw, pkt_length, "unknown packet type, skipping");
                             let _ = self.input.split_to(hlen);
                             self.to_skip = pkt_length as usize;
                             self.events
@@ -483,6 +501,8 @@ impl<R: Role> Parser<R> {
                     let type_header_len = match self.get_type_header_len(pkt_type, false) {
                         Ok(len) => len,
                         Err(e) => {
+                            #[cfg(feature = "tracing")]
+                            tracing::warn!(?pkt_type, ?e, "direction check failed, skipping");
                             let _ = self.input.split_to(hlen);
                             self.to_skip = pkt_length as usize;
                             self.events.push_back(Event::Error(e));
@@ -492,6 +512,8 @@ impl<R: Role> Parser<R> {
 
                     // Validate length
                     if pkt_length > MAX_PACKET_SIZE {
+                        #[cfg(feature = "tracing")]
+                        tracing::warn!(?pkt_type, pkt_length, "packet too large, skipping");
                         let _ = self.input.split_to(hlen);
                         self.to_skip = pkt_length as usize;
                         self.events.push_back(Event::Error(Error::PacketTooLarge {
@@ -505,6 +527,8 @@ impl<R: Role> Parser<R> {
                         || ((pkt_length as usize) > type_header_len
                             && !Self::expects_extra_data(pkt_type))
                     {
+                        #[cfg(feature = "tracing")]
+                        tracing::warn!(?pkt_type, pkt_length, type_header_len, "invalid packet length, skipping");
                         let _ = self.input.split_to(hlen);
                         self.to_skip = pkt_length as usize;
                         self.events
@@ -516,6 +540,8 @@ impl<R: Role> Parser<R> {
                     }
 
                     let _ = self.input.split_to(hlen);
+                    #[cfg(feature = "tracing")]
+                    tracing::debug!(?pkt_type, pkt_id, pkt_length, "header parsed");
                     self.state = ParseState::Body {
                         pkt_type,
                         pkt_length,
@@ -554,6 +580,8 @@ impl<R: Role> Parser<R> {
                             } = packet
                             {
                                 if self.peer_caps.is_some() {
+                                    #[cfg(feature = "tracing")]
+                                    tracing::warn!("duplicate hello received");
                                     self.events.push_back(Event::Error(Error::DuplicateHello));
                                     self.state = ParseState::Header;
                                     continue;
@@ -565,14 +593,19 @@ impl<R: Role> Parser<R> {
                                     let id_bits = if self.using_32bit_ids() { 32 } else { 64 };
                                     tracing::info!(
                                         peer_version = %version,
+                                        ?peer_caps,
                                         id_bits,
-                                        "Peer hello received"
+                                        "peer hello received"
                                     );
                                 }
                             }
+                            #[cfg(feature = "tracing")]
+                            tracing::debug!(?pkt_type, pkt_id, "packet decoded");
                             self.events.push_back(Event::Packet(Box::new(packet)));
                         }
                         Err(e) => {
+                            #[cfg(feature = "tracing")]
+                            tracing::warn!(?pkt_type, pkt_id, ?e, "packet decode failed");
                             self.events.push_back(Event::Error(e));
                         }
                     }
@@ -1140,6 +1173,8 @@ impl<R: Role> Parser<R> {
         // Hello must be sendable before negotiation; all other packets require
         // peer caps so that capability-dependent wire formats are correct.
         if !matches!(*packet, Packet::Hello { .. }) && self.peer_caps.is_none() {
+            #[cfg(feature = "tracing")]
+            tracing::warn!(pkt_type = ?packet.packet_type(), "send before peer hello");
             return Err(Error::NoPeerCaps);
         }
 
@@ -1180,6 +1215,13 @@ impl<R: Role> Parser<R> {
         }
 
         let bytes = buf.freeze();
+        #[cfg(feature = "tracing")]
+        tracing::debug!(
+            ?pkt_type,
+            id,
+            wire_len = bytes.len(),
+            "packet sent"
+        );
         self.output_total_size = self.output_total_size.saturating_add(bytes.len() as u64);
         self.output.push_back(bytes);
 
