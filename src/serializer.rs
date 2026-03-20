@@ -12,7 +12,6 @@
 //!   u32 write_buf_count
 //!     (for each write buf: u32 len + bytes)
 
-use alloc::format;
 use alloc::vec::Vec;
 
 use bytes::Bytes;
@@ -106,12 +105,12 @@ impl Parser {
 
         let magic = read_u32(data, &mut pos)?;
         if magic != SERIALIZE_MAGIC {
-            return Err(Error::Deserialize("magic mismatch".into()));
+            return Err(Error::SerializeBadMagic);
         }
 
         let total_len = read_u32(data, &mut pos)?;
         if total_len as usize != data.len() {
-            return Err(Error::Deserialize("length mismatch".into()));
+            return Err(Error::SerializeLengthMismatch);
         }
 
         // our_caps
@@ -120,9 +119,7 @@ impl Parser {
 
         // Verify our_caps is a subset of config.caps
         if !our_caps.is_subset_of(&config.caps) {
-            return Err(Error::Deserialize(
-                "caps mismatch: source has caps we don't".into(),
-            ));
+            return Err(Error::SerializeCapsMismatch);
         }
 
         // peer_caps
@@ -173,16 +170,15 @@ impl Parser {
         for _ in 0..write_buf_count {
             let buf_data = read_data(data, &mut pos)?;
             if buf_data.is_empty() {
-                return Err(Error::Deserialize("empty write buffer".into()));
+                return Err(Error::SerializeEmptyWriteBuffer);
             }
             parser.restore_output(Bytes::copy_from_slice(buf_data));
         }
 
         if pos != data.len() {
-            return Err(Error::Deserialize(format!(
-                "extraneous data: {} bytes remaining",
-                data.len() - pos
-            )));
+            return Err(Error::SerializeExtraneousData {
+                remaining: data.len() - pos,
+            });
         }
 
         Ok(parser)
@@ -200,7 +196,7 @@ fn write_data(out: &mut Vec<u8>, data: &[u8]) {
 
 fn read_u32(data: &[u8], pos: &mut usize) -> Result<u32> {
     if *pos + 4 > data.len() {
-        return Err(Error::Deserialize("buffer underrun reading u32".into()));
+        return Err(Error::SerializeBufferUnderrun);
     }
     let val = u32::from_le_bytes(data[*pos..*pos + 4].try_into().unwrap());
     *pos += 4;
@@ -210,7 +206,7 @@ fn read_u32(data: &[u8], pos: &mut usize) -> Result<u32> {
 fn read_data<'a>(data: &'a [u8], pos: &mut usize) -> Result<&'a [u8]> {
     let len = read_u32(data, pos)? as usize;
     if *pos + len > data.len() {
-        return Err(Error::Deserialize("buffer underrun reading data".into()));
+        return Err(Error::SerializeBufferUnderrun);
     }
     let result = &data[*pos..*pos + len];
     *pos += len;

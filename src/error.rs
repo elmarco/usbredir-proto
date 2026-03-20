@@ -1,5 +1,3 @@
-use alloc::string::String;
-
 use crate::caps::Cap;
 use crate::proto::Endpoint;
 
@@ -27,10 +25,24 @@ pub enum Error {
     InterfaceCountTooLarge(u32),
     #[error("invalid enum value: {0}")]
     InvalidEnumValue(u8),
-    #[error("serialize error: {0}")]
-    Serialize(String),
-    #[error("deserialize error: {0}")]
-    Deserialize(String),
+    #[error("failed to decode wire header for packet type {packet_type}")]
+    WireHeaderDecode { packet_type: u32 },
+    #[error("invalid UTF-8 in packet data")]
+    InvalidUtf8,
+    #[error("filter data not null-terminated")]
+    FilterNotNullTerminated,
+    #[error("serialization magic mismatch")]
+    SerializeBadMagic,
+    #[error("serialization length mismatch")]
+    SerializeLengthMismatch,
+    #[error("serialization caps mismatch: source has caps we don't")]
+    SerializeCapsMismatch,
+    #[error("serialization buffer underrun")]
+    SerializeBufferUnderrun,
+    #[error("serialization: empty write buffer")]
+    SerializeEmptyWriteBuffer,
+    #[error("serialization: {remaining} extraneous bytes")]
+    SerializeExtraneousData { remaining: usize },
     #[error("wrong direction packet")]
     WrongDirectionPacket,
     #[error("non-input endpoint for receiving: {endpoint}")]

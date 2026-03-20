@@ -816,10 +816,16 @@ impl Parser {
     }
 
     fn decode_packet(&self, pkt_type: u32, id: u64, type_header: &[u8], data: Bytes) -> Result<Packet> {
+        macro_rules! wire_err {
+            () => {
+                |_| Error::WireHeaderDecode { packet_type: pkt_type }
+            };
+        }
+
         match pkt_type {
             pkt_type::HELLO => {
                 let hdr = wire::HelloHeader::read_from_bytes(type_header)
-                    .map_err(|_| Error::Deserialize("hello header".into()))?;
+                    .map_err(wire_err!())?;
                 let version_bytes = &hdr.version;
                 let version = core::str::from_utf8(version_bytes)
                     .unwrap_or("")
@@ -831,7 +837,7 @@ impl Parser {
             pkt_type::DEVICE_CONNECT => {
                 if self.negotiated(Cap::ConnectDeviceVersion) {
                     let hdr = wire::DeviceConnectHeader::read_from_bytes(type_header)
-                        .map_err(|_| Error::Deserialize("device connect".into()))?;
+                        .map_err(wire_err!())?;
                     Ok(Packet::DeviceConnect {
                         speed: Speed::try_from(hdr.speed).map_err(Error::InvalidEnumValue)?,
                         device_class: hdr.device_class,
@@ -843,7 +849,7 @@ impl Parser {
                     })
                 } else {
                     let hdr = wire::DeviceConnectHeaderNoVersion::read_from_bytes(type_header)
-                        .map_err(|_| Error::Deserialize("device connect no ver".into()))?;
+                        .map_err(wire_err!())?;
                     Ok(Packet::DeviceConnect {
                         speed: Speed::try_from(hdr.speed).map_err(Error::InvalidEnumValue)?,
                         device_class: hdr.device_class,
@@ -859,7 +865,7 @@ impl Parser {
             pkt_type::RESET => Ok(Packet::Reset { id }),
             pkt_type::INTERFACE_INFO => {
                 let hdr = wire::InterfaceInfoHeader::read_from_bytes(type_header)
-                    .map_err(|_| Error::Deserialize("interface info".into()))?;
+                    .map_err(wire_err!())?;
                 Ok(Packet::InterfaceInfo {
                     interface_count: hdr.interface_count.get(),
                     interface: hdr.interface,
@@ -877,7 +883,7 @@ impl Parser {
 
                 if self.negotiated(Cap::BulkStreams) {
                     let hdr = wire::EpInfoHeader::read_from_bytes(type_header)
-                        .map_err(|_| Error::Deserialize("ep info".into()))?;
+                        .map_err(wire_err!())?;
                     for i in 0..32 {
                         ep_type[i] = TransferType::try_from(hdr.ep_type[i])
                             .map_err(Error::InvalidEnumValue)?;
@@ -888,7 +894,7 @@ impl Parser {
                     }
                 } else if self.negotiated(Cap::EpInfoMaxPacketSize) {
                     let hdr = wire::EpInfoHeaderNoMaxStreams::read_from_bytes(type_header)
-                        .map_err(|_| Error::Deserialize("ep info no streams".into()))?;
+                        .map_err(wire_err!())?;
                     for i in 0..32 {
                         ep_type[i] = TransferType::try_from(hdr.ep_type[i])
                             .map_err(Error::InvalidEnumValue)?;
@@ -898,7 +904,7 @@ impl Parser {
                     }
                 } else {
                     let hdr = wire::EpInfoHeaderNoMaxPktsz::read_from_bytes(type_header)
-                        .map_err(|_| Error::Deserialize("ep info no pktsz".into()))?;
+                        .map_err(wire_err!())?;
                     for i in 0..32 {
                         ep_type[i] = TransferType::try_from(hdr.ep_type[i])
                             .map_err(Error::InvalidEnumValue)?;
@@ -917,7 +923,7 @@ impl Parser {
             }
             pkt_type::SET_CONFIGURATION => {
                 let hdr = wire::SetConfigurationHeader::read_from_bytes(type_header)
-                    .map_err(|_| Error::Deserialize("set config".into()))?;
+                    .map_err(wire_err!())?;
                 Ok(Packet::SetConfiguration {
                     id,
                     configuration: hdr.configuration,
@@ -926,7 +932,7 @@ impl Parser {
             pkt_type::GET_CONFIGURATION => Ok(Packet::GetConfiguration { id }),
             pkt_type::CONFIGURATION_STATUS => {
                 let hdr = wire::ConfigurationStatusHeader::read_from_bytes(type_header)
-                    .map_err(|_| Error::Deserialize("config status".into()))?;
+                    .map_err(wire_err!())?;
                 Ok(Packet::ConfigurationStatus {
                     id,
                     status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
@@ -935,7 +941,7 @@ impl Parser {
             }
             pkt_type::SET_ALT_SETTING => {
                 let hdr = wire::SetAltSettingHeader::read_from_bytes(type_header)
-                    .map_err(|_| Error::Deserialize("set alt".into()))?;
+                    .map_err(wire_err!())?;
                 Ok(Packet::SetAltSetting {
                     id,
                     interface: hdr.interface,
@@ -944,7 +950,7 @@ impl Parser {
             }
             pkt_type::GET_ALT_SETTING => {
                 let hdr = wire::GetAltSettingHeader::read_from_bytes(type_header)
-                    .map_err(|_| Error::Deserialize("get alt".into()))?;
+                    .map_err(wire_err!())?;
                 Ok(Packet::GetAltSetting {
                     id,
                     interface: hdr.interface,
@@ -952,7 +958,7 @@ impl Parser {
             }
             pkt_type::ALT_SETTING_STATUS => {
                 let hdr = wire::AltSettingStatusHeader::read_from_bytes(type_header)
-                    .map_err(|_| Error::Deserialize("alt status".into()))?;
+                    .map_err(wire_err!())?;
                 Ok(Packet::AltSettingStatus {
                     id,
                     status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
@@ -962,7 +968,7 @@ impl Parser {
             }
             pkt_type::START_ISO_STREAM => {
                 let hdr = wire::StartIsoStreamHeader::read_from_bytes(type_header)
-                    .map_err(|_| Error::Deserialize("start iso".into()))?;
+                    .map_err(wire_err!())?;
                 Ok(Packet::StartIsoStream {
                     id,
                     endpoint: Endpoint::new(hdr.endpoint),
@@ -972,7 +978,7 @@ impl Parser {
             }
             pkt_type::STOP_ISO_STREAM => {
                 let hdr = wire::StopIsoStreamHeader::read_from_bytes(type_header)
-                    .map_err(|_| Error::Deserialize("stop iso".into()))?;
+                    .map_err(wire_err!())?;
                 Ok(Packet::StopIsoStream {
                     id,
                     endpoint: Endpoint::new(hdr.endpoint),
@@ -980,7 +986,7 @@ impl Parser {
             }
             pkt_type::ISO_STREAM_STATUS => {
                 let hdr = wire::IsoStreamStatusHeader::read_from_bytes(type_header)
-                    .map_err(|_| Error::Deserialize("iso status".into()))?;
+                    .map_err(wire_err!())?;
                 Ok(Packet::IsoStreamStatus {
                     id,
                     status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
@@ -989,7 +995,7 @@ impl Parser {
             }
             pkt_type::START_INTERRUPT_RECEIVING => {
                 let hdr = wire::StartInterruptReceivingHeader::read_from_bytes(type_header)
-                    .map_err(|_| Error::Deserialize("start int recv".into()))?;
+                    .map_err(wire_err!())?;
                 Ok(Packet::StartInterruptReceiving {
                     id,
                     endpoint: Endpoint::new(hdr.endpoint),
@@ -997,7 +1003,7 @@ impl Parser {
             }
             pkt_type::STOP_INTERRUPT_RECEIVING => {
                 let hdr = wire::StopInterruptReceivingHeader::read_from_bytes(type_header)
-                    .map_err(|_| Error::Deserialize("stop int recv".into()))?;
+                    .map_err(wire_err!())?;
                 Ok(Packet::StopInterruptReceiving {
                     id,
                     endpoint: Endpoint::new(hdr.endpoint),
@@ -1005,7 +1011,7 @@ impl Parser {
             }
             pkt_type::INTERRUPT_RECEIVING_STATUS => {
                 let hdr = wire::InterruptReceivingStatusHeader::read_from_bytes(type_header)
-                    .map_err(|_| Error::Deserialize("int recv status".into()))?;
+                    .map_err(wire_err!())?;
                 Ok(Packet::InterruptReceivingStatus {
                     id,
                     status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
@@ -1014,7 +1020,7 @@ impl Parser {
             }
             pkt_type::ALLOC_BULK_STREAMS => {
                 let hdr = wire::AllocBulkStreamsHeader::read_from_bytes(type_header)
-                    .map_err(|_| Error::Deserialize("alloc streams".into()))?;
+                    .map_err(wire_err!())?;
                 Ok(Packet::AllocBulkStreams {
                     id,
                     endpoints: hdr.endpoints.get(),
@@ -1023,7 +1029,7 @@ impl Parser {
             }
             pkt_type::FREE_BULK_STREAMS => {
                 let hdr = wire::FreeBulkStreamsHeader::read_from_bytes(type_header)
-                    .map_err(|_| Error::Deserialize("free streams".into()))?;
+                    .map_err(wire_err!())?;
                 Ok(Packet::FreeBulkStreams {
                     id,
                     endpoints: hdr.endpoints.get(),
@@ -1031,7 +1037,7 @@ impl Parser {
             }
             pkt_type::BULK_STREAMS_STATUS => {
                 let hdr = wire::BulkStreamsStatusHeader::read_from_bytes(type_header)
-                    .map_err(|_| Error::Deserialize("streams status".into()))?;
+                    .map_err(wire_err!())?;
                 Ok(Packet::BulkStreamsStatus {
                     id,
                     endpoints: hdr.endpoints.get(),
@@ -1045,9 +1051,9 @@ impl Parser {
                 // Data is a null-terminated string of filter rules
                 let s = if !data.is_empty() && data[data.len() - 1] == 0 {
                     core::str::from_utf8(&data[..data.len() - 1])
-                        .map_err(|_| Error::Deserialize("filter string".into()))?
+                        .map_err(|_| Error::InvalidUtf8)?
                 } else {
-                    return Err(Error::Deserialize("filter not null-terminated".into()));
+                    return Err(Error::FilterNotNullTerminated);
                 };
                 let rules = filter::parse_rules(s, ",", "|")?;
                 Ok(Packet::FilterFilter { rules })
@@ -1055,7 +1061,7 @@ impl Parser {
             pkt_type::DEVICE_DISCONNECT_ACK => Ok(Packet::DeviceDisconnectAck),
             pkt_type::START_BULK_RECEIVING => {
                 let hdr = wire::StartBulkReceivingHeader::read_from_bytes(type_header)
-                    .map_err(|_| Error::Deserialize("start bulk recv".into()))?;
+                    .map_err(wire_err!())?;
                 Ok(Packet::StartBulkReceiving {
                     id,
                     stream_id: hdr.stream_id.get(),
@@ -1066,7 +1072,7 @@ impl Parser {
             }
             pkt_type::STOP_BULK_RECEIVING => {
                 let hdr = wire::StopBulkReceivingHeader::read_from_bytes(type_header)
-                    .map_err(|_| Error::Deserialize("stop bulk recv".into()))?;
+                    .map_err(wire_err!())?;
                 Ok(Packet::StopBulkReceiving {
                     id,
                     stream_id: hdr.stream_id.get(),
@@ -1075,7 +1081,7 @@ impl Parser {
             }
             pkt_type::BULK_RECEIVING_STATUS => {
                 let hdr = wire::BulkReceivingStatusHeader::read_from_bytes(type_header)
-                    .map_err(|_| Error::Deserialize("bulk recv status".into()))?;
+                    .map_err(wire_err!())?;
                 Ok(Packet::BulkReceivingStatus {
                     id,
                     stream_id: hdr.stream_id.get(),
@@ -1085,7 +1091,7 @@ impl Parser {
             }
             pkt_type::CONTROL_PACKET => {
                 let hdr = wire::ControlPacketHeader::read_from_bytes(type_header)
-                    .map_err(|_| Error::Deserialize("control pkt".into()))?;
+                    .map_err(wire_err!())?;
                 Ok(Packet::Data(crate::packet::DataPacket {
                     id,
                     endpoint: Endpoint::new(hdr.endpoint),
@@ -1103,7 +1109,7 @@ impl Parser {
             pkt_type::BULK_PACKET => {
                 if self.negotiated(Cap::BulkLength32Bits) {
                     let hdr = wire::BulkPacketHeader::read_from_bytes(type_header)
-                        .map_err(|_| Error::Deserialize("bulk pkt".into()))?;
+                        .map_err(wire_err!())?;
                     let length = ((hdr.length_high.get() as u32) << 16) | (hdr.length.get() as u32);
                     Ok(Packet::Data(crate::packet::DataPacket {
                         id,
@@ -1117,7 +1123,7 @@ impl Parser {
                     }))
                 } else {
                     let hdr = wire::BulkPacketHeader16BitLength::read_from_bytes(type_header)
-                        .map_err(|_| Error::Deserialize("bulk pkt 16".into()))?;
+                        .map_err(wire_err!())?;
                     Ok(Packet::Data(crate::packet::DataPacket {
                         id,
                         endpoint: Endpoint::new(hdr.endpoint),
@@ -1132,7 +1138,7 @@ impl Parser {
             }
             pkt_type::ISO_PACKET => {
                 let hdr = wire::IsoPacketHeader::read_from_bytes(type_header)
-                    .map_err(|_| Error::Deserialize("iso pkt".into()))?;
+                    .map_err(wire_err!())?;
                 Ok(Packet::Data(crate::packet::DataPacket {
                     id,
                     endpoint: Endpoint::new(hdr.endpoint),
@@ -1145,7 +1151,7 @@ impl Parser {
             }
             pkt_type::INTERRUPT_PACKET => {
                 let hdr = wire::InterruptPacketHeader::read_from_bytes(type_header)
-                    .map_err(|_| Error::Deserialize("interrupt pkt".into()))?;
+                    .map_err(wire_err!())?;
                 Ok(Packet::Data(crate::packet::DataPacket {
                     id,
                     endpoint: Endpoint::new(hdr.endpoint),
@@ -1158,7 +1164,7 @@ impl Parser {
             }
             pkt_type::BUFFERED_BULK_PACKET => {
                 let hdr = wire::BufferedBulkPacketHeader::read_from_bytes(type_header)
-                    .map_err(|_| Error::Deserialize("buffered bulk".into()))?;
+                    .map_err(wire_err!())?;
                 Ok(Packet::Data(crate::packet::DataPacket {
                     id,
                     endpoint: Endpoint::new(hdr.endpoint),
@@ -1446,8 +1452,7 @@ impl Parser {
             Packet::Reset { .. } => {}
             Packet::FilterReject => {}
             Packet::FilterFilter { rules } => {
-                let s = filter::rules_to_string(rules, ",", "|")
-                    .map_err(|e| Error::Serialize(e.to_string()))?;
+                let s = filter::rules_to_string(rules, ",", "|")?;
                 buf.extend_from_slice(s.as_bytes());
                 buf.extend_from_slice(&[0]); // null terminator
             }
