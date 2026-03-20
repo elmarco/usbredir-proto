@@ -110,110 +110,7 @@ impl core::fmt::Display for DataPacket {
     }
 }
 
-impl DataPacket {
-    /// Create a control transfer packet.
-    #[must_use]
-    #[allow(clippy::too_many_arguments)]
-    pub fn control(
-        id: u64,
-        endpoint: Endpoint,
-        request: u8,
-        requesttype: u8,
-        status: Status,
-        value: u16,
-        index: u16,
-        length: u16,
-        data: impl Into<Bytes>,
-    ) -> Self {
-        Self {
-            id,
-            endpoint,
-            status,
-            kind: DataKind::Control {
-                request,
-                requesttype,
-                value,
-                index,
-                length,
-            },
-            data: data.into(),
-        }
-    }
 
-    /// Create a bulk transfer packet.
-    #[must_use]
-    pub fn bulk(
-        id: u64,
-        endpoint: Endpoint,
-        status: Status,
-        length: u32,
-        stream_id: u32,
-        data: impl Into<Bytes>,
-    ) -> Self {
-        Self {
-            id,
-            endpoint,
-            status,
-            kind: DataKind::Bulk { length, stream_id },
-            data: data.into(),
-        }
-    }
-
-    /// Create an isochronous transfer packet.
-    #[must_use]
-    pub fn iso(
-        id: u64,
-        endpoint: Endpoint,
-        status: Status,
-        length: u16,
-        data: impl Into<Bytes>,
-    ) -> Self {
-        Self {
-            id,
-            endpoint,
-            status,
-            kind: DataKind::Iso { length },
-            data: data.into(),
-        }
-    }
-
-    /// Create an interrupt transfer packet.
-    #[must_use]
-    pub fn interrupt(
-        id: u64,
-        endpoint: Endpoint,
-        status: Status,
-        length: u16,
-        data: impl Into<Bytes>,
-    ) -> Self {
-        Self {
-            id,
-            endpoint,
-            status,
-            kind: DataKind::Interrupt { length },
-            data: data.into(),
-        }
-    }
-
-    /// Create a buffered bulk transfer packet.
-    #[must_use]
-    pub fn buffered_bulk(
-        id: u64,
-        stream_id: u32,
-        length: u32,
-        endpoint: Endpoint,
-        status: Status,
-        data: impl Into<Bytes>,
-    ) -> Self {
-        Self {
-            id,
-            endpoint,
-            status,
-            kind: DataKind::BufferedBulk { stream_id, length },
-            data: data.into(),
-        }
-    }
-}
 
 /// The type-specific part of a request/response packet.
 ///
@@ -998,17 +895,19 @@ impl Packet {
         length: u16,
         data: impl Into<Bytes>,
     ) -> Self {
-        Self::Data(DataPacket::control(
+        Self::Data(DataPacket {
             id,
             endpoint,
-            request,
-            requesttype,
             status,
-            value,
-            index,
-            length,
-            data,
-        ))
+            kind: DataKind::Control {
+                request,
+                requesttype,
+                value,
+                index,
+                length,
+            },
+            data: data.into(),
+        })
     }
 
     /// Create a BulkPacket.
@@ -1021,9 +920,13 @@ impl Packet {
         stream_id: u32,
         data: impl Into<Bytes>,
     ) -> Self {
-        Self::Data(DataPacket::bulk(
-            id, endpoint, status, length, stream_id, data,
-        ))
+        Self::Data(DataPacket {
+            id,
+            endpoint,
+            status,
+            kind: DataKind::Bulk { length, stream_id },
+            data: data.into(),
+        })
     }
 
     /// Create an IsoPacket.
@@ -1035,7 +938,13 @@ impl Packet {
         length: u16,
         data: impl Into<Bytes>,
     ) -> Self {
-        Self::Data(DataPacket::iso(id, endpoint, status, length, data))
+        Self::Data(DataPacket {
+            id,
+            endpoint,
+            status,
+            kind: DataKind::Iso { length },
+            data: data.into(),
+        })
     }
 
     /// Create an InterruptPacket.
@@ -1047,7 +956,13 @@ impl Packet {
         length: u16,
         data: impl Into<Bytes>,
     ) -> Self {
-        Self::Data(DataPacket::interrupt(id, endpoint, status, length, data))
+        Self::Data(DataPacket {
+            id,
+            endpoint,
+            status,
+            kind: DataKind::Interrupt { length },
+            data: data.into(),
+        })
     }
 
     /// Create a BufferedBulkPacket.
@@ -1060,8 +975,12 @@ impl Packet {
         status: Status,
         data: impl Into<Bytes>,
     ) -> Self {
-        Self::Data(DataPacket::buffered_bulk(
-            id, stream_id, length, endpoint, status, data,
-        ))
+        Self::Data(DataPacket {
+            id,
+            endpoint,
+            status,
+            kind: DataKind::BufferedBulk { stream_id, length },
+            data: data.into(),
+        })
     }
 }
