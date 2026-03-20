@@ -621,12 +621,12 @@ fn interop_reset() {
         c_to_rust(
             false,
             c_encode,
-            |p| matches!(p, Packet::Reset { .. }),
+            |p| matches!(p, Packet::Request(RequestPacket { kind: RequestKind::Reset, .. })),
             "reset",
         );
-        rust_to_c(true, Packet::Reset { id: 1 }, "reset");
+        rust_to_c(true, Packet::reset(1), "reset");
         // C's send_reset doesn't take an id — it always uses 0
-        byte_compare(false, c_encode, Packet::Reset { id: 0 }, "reset");
+        byte_compare(false, c_encode, Packet::reset(0), "reset");
     }
 }
 
@@ -740,30 +740,20 @@ fn interop_set_configuration() {
             |p| {
                 matches!(
                     p,
-                    Packet::SetConfiguration {
-                        id: 42,
-                        configuration: 1,
-                        ..
-                    }
+                    Packet::Request(RequestPacket { id: 42, kind: RequestKind::SetConfiguration { configuration: 1 } })
                 )
             },
             "set_configuration",
         );
         rust_to_c(
             true,
-            Packet::SetConfiguration {
-                id: 42,
-                configuration: 1,
-            },
+            Packet::set_configuration(42, 1),
             "set_configuration",
         );
         byte_compare(
             false,
             c_encode,
-            Packet::SetConfiguration {
-                id: 42,
-                configuration: 1,
-            },
+            Packet::set_configuration(42, 1),
             "set_configuration",
         );
     }
@@ -780,18 +770,18 @@ fn interop_get_configuration() {
         c_to_rust(
             false,
             c_encode,
-            |p| matches!(p, Packet::GetConfiguration { id: 7, .. }),
+            |p| matches!(p, Packet::Request(RequestPacket { id: 7, kind: RequestKind::GetConfiguration })),
             "get_configuration",
         );
         rust_to_c(
             true,
-            Packet::GetConfiguration { id: 7 },
+            Packet::get_configuration(7),
             "get_configuration",
         );
         byte_compare(
             false,
             c_encode,
-            Packet::GetConfiguration { id: 7 },
+            Packet::get_configuration(7),
             "get_configuration",
         );
     }
@@ -815,32 +805,20 @@ fn interop_configuration_status() {
             |p| {
                 matches!(
                     p,
-                    Packet::ConfigurationStatus {
-                        id: 10,
-                        configuration: 2,
-                        ..
-                    }
+                    Packet::Request(RequestPacket { id: 10, kind: RequestKind::ConfigurationStatus { configuration: 2, .. } })
                 )
             },
             "configuration_status",
         );
         rust_to_c(
             false,
-            Packet::ConfigurationStatus {
-                id: 10,
-                status: Status::Success,
-                configuration: 2,
-            },
+            Packet::configuration_status(10, Status::Success, 2),
             "configuration_status",
         );
         byte_compare(
             true,
             c_encode,
-            Packet::ConfigurationStatus {
-                id: 10,
-                status: Status::Success,
-                configuration: 2,
-            },
+            Packet::configuration_status(10, Status::Success, 2),
             "configuration_status",
         );
     }
@@ -864,33 +842,20 @@ fn interop_set_alt_setting() {
             |p| {
                 matches!(
                     p,
-                    Packet::SetAltSetting {
-                        id: 20,
-                        interface: 1,
-                        alt: 3,
-                        ..
-                    }
+                    Packet::Request(RequestPacket { id: 20, kind: RequestKind::SetAltSetting { interface: 1, alt: 3 } })
                 )
             },
             "set_alt_setting",
         );
         rust_to_c(
             true,
-            Packet::SetAltSetting {
-                id: 20,
-                interface: 1,
-                alt: 3,
-            },
+            Packet::set_alt_setting(20, 1, 3),
             "set_alt_setting",
         );
         byte_compare(
             false,
             c_encode,
-            Packet::SetAltSetting {
-                id: 20,
-                interface: 1,
-                alt: 3,
-            },
+            Packet::set_alt_setting(20, 1, 3),
             "set_alt_setting",
         );
     }
@@ -911,30 +876,20 @@ fn interop_get_alt_setting() {
             |p| {
                 matches!(
                     p,
-                    Packet::GetAltSetting {
-                        id: 21,
-                        interface: 2,
-                        ..
-                    }
+                    Packet::Request(RequestPacket { id: 21, kind: RequestKind::GetAltSetting { interface: 2 } })
                 )
             },
             "get_alt_setting",
         );
         rust_to_c(
             true,
-            Packet::GetAltSetting {
-                id: 21,
-                interface: 2,
-            },
+            Packet::get_alt_setting(21, 2),
             "get_alt_setting",
         );
         byte_compare(
             false,
             c_encode,
-            Packet::GetAltSetting {
-                id: 21,
-                interface: 2,
-            },
+            Packet::get_alt_setting(21, 2),
             "get_alt_setting",
         );
     }
@@ -959,35 +914,20 @@ fn interop_alt_setting_status() {
             |p| {
                 matches!(
                     p,
-                    Packet::AltSettingStatus {
-                        id: 22,
-                        interface: 1,
-                        alt: 2,
-                        ..
-                    }
+                    Packet::Request(RequestPacket { id: 22, kind: RequestKind::AltSettingStatus { interface: 1, alt: 2, .. } })
                 )
             },
             "alt_setting_status",
         );
         rust_to_c(
             false,
-            Packet::AltSettingStatus {
-                id: 22,
-                status: Status::Success,
-                interface: 1,
-                alt: 2,
-            },
+            Packet::alt_setting_status(22, Status::Success, 1, 2),
             "alt_setting_status",
         );
         byte_compare(
             true,
             c_encode,
-            Packet::AltSettingStatus {
-                id: 22,
-                status: Status::Success,
-                interface: 1,
-                alt: 2,
-            },
+            Packet::alt_setting_status(22, Status::Success, 1, 2),
             "alt_setting_status",
         );
     }
@@ -1009,28 +949,18 @@ fn interop_start_iso_stream() {
         c_to_rust(
             false,
             c_encode,
-            |p| matches!(p, Packet::StartIsoStream { id: 30, .. }),
+            |p| matches!(p, Packet::Request(RequestPacket { id: 30, kind: RequestKind::StartIsoStream { .. } })),
             "start_iso_stream",
         );
         rust_to_c(
             true,
-            Packet::StartIsoStream {
-                id: 30,
-                endpoint: Endpoint::new(0x81),
-                pkts_per_urb: 8,
-                no_urbs: 4,
-            },
+            Packet::start_iso_stream(30, Endpoint::new(0x81), 8, 4),
             "start_iso_stream",
         );
         byte_compare(
             false,
             c_encode,
-            Packet::StartIsoStream {
-                id: 30,
-                endpoint: Endpoint::new(0x81),
-                pkts_per_urb: 8,
-                no_urbs: 4,
-            },
+            Packet::start_iso_stream(30, Endpoint::new(0x81), 8, 4),
             "start_iso_stream",
         );
     }
@@ -1048,24 +978,18 @@ fn interop_stop_iso_stream() {
         c_to_rust(
             false,
             c_encode,
-            |p| matches!(p, Packet::StopIsoStream { id: 31, .. }),
+            |p| matches!(p, Packet::Request(RequestPacket { id: 31, kind: RequestKind::StopIsoStream { .. } })),
             "stop_iso_stream",
         );
         rust_to_c(
             true,
-            Packet::StopIsoStream {
-                id: 31,
-                endpoint: Endpoint::new(0x81),
-            },
+            Packet::stop_iso_stream(31, Endpoint::new(0x81)),
             "stop_iso_stream",
         );
         byte_compare(
             false,
             c_encode,
-            Packet::StopIsoStream {
-                id: 31,
-                endpoint: Endpoint::new(0x81),
-            },
+            Packet::stop_iso_stream(31, Endpoint::new(0x81)),
             "stop_iso_stream",
         );
     }
@@ -1086,26 +1010,18 @@ fn interop_iso_stream_status() {
         c_to_rust(
             true,
             c_encode,
-            |p| matches!(p, Packet::IsoStreamStatus { id: 32, .. }),
+            |p| matches!(p, Packet::Request(RequestPacket { id: 32, kind: RequestKind::IsoStreamStatus { .. } })),
             "iso_stream_status",
         );
         rust_to_c(
             false,
-            Packet::IsoStreamStatus {
-                id: 32,
-                status: Status::Success,
-                endpoint: Endpoint::new(0x81),
-            },
+            Packet::iso_stream_status(32, Status::Success, Endpoint::new(0x81)),
             "iso_stream_status",
         );
         byte_compare(
             true,
             c_encode,
-            Packet::IsoStreamStatus {
-                id: 32,
-                status: Status::Success,
-                endpoint: Endpoint::new(0x81),
-            },
+            Packet::iso_stream_status(32, Status::Success, Endpoint::new(0x81)),
             "iso_stream_status",
         );
     }
@@ -1123,24 +1039,18 @@ fn interop_start_interrupt_receiving() {
         c_to_rust(
             false,
             c_encode,
-            |p| matches!(p, Packet::StartInterruptReceiving { id: 40, .. }),
+            |p| matches!(p, Packet::Request(RequestPacket { id: 40, kind: RequestKind::StartInterruptReceiving { .. } })),
             "start_interrupt_receiving",
         );
         rust_to_c(
             true,
-            Packet::StartInterruptReceiving {
-                id: 40,
-                endpoint: Endpoint::new(0x83),
-            },
+            Packet::start_interrupt_receiving(40, Endpoint::new(0x83)),
             "start_interrupt_receiving",
         );
         byte_compare(
             false,
             c_encode,
-            Packet::StartInterruptReceiving {
-                id: 40,
-                endpoint: Endpoint::new(0x83),
-            },
+            Packet::start_interrupt_receiving(40, Endpoint::new(0x83)),
             "start_interrupt_receiving",
         );
     }
@@ -1156,24 +1066,18 @@ fn interop_stop_interrupt_receiving() {
         c_to_rust(
             false,
             c_encode,
-            |p| matches!(p, Packet::StopInterruptReceiving { id: 41, .. }),
+            |p| matches!(p, Packet::Request(RequestPacket { id: 41, kind: RequestKind::StopInterruptReceiving { .. } })),
             "stop_interrupt_receiving",
         );
         rust_to_c(
             true,
-            Packet::StopInterruptReceiving {
-                id: 41,
-                endpoint: Endpoint::new(0x83),
-            },
+            Packet::stop_interrupt_receiving(41, Endpoint::new(0x83)),
             "stop_interrupt_receiving",
         );
         byte_compare(
             false,
             c_encode,
-            Packet::StopInterruptReceiving {
-                id: 41,
-                endpoint: Endpoint::new(0x83),
-            },
+            Packet::stop_interrupt_receiving(41, Endpoint::new(0x83)),
             "stop_interrupt_receiving",
         );
     }
@@ -1192,26 +1096,18 @@ fn interop_interrupt_receiving_status() {
         c_to_rust(
             true,
             c_encode,
-            |p| matches!(p, Packet::InterruptReceivingStatus { id: 42, .. }),
+            |p| matches!(p, Packet::Request(RequestPacket { id: 42, kind: RequestKind::InterruptReceivingStatus { .. } })),
             "interrupt_receiving_status",
         );
         rust_to_c(
             false,
-            Packet::InterruptReceivingStatus {
-                id: 42,
-                status: Status::Success,
-                endpoint: Endpoint::new(0x83),
-            },
+            Packet::interrupt_receiving_status(42, Status::Success, Endpoint::new(0x83)),
             "interrupt_receiving_status",
         );
         byte_compare(
             true,
             c_encode,
-            Packet::InterruptReceivingStatus {
-                id: 42,
-                status: Status::Success,
-                endpoint: Endpoint::new(0x83),
-            },
+            Packet::interrupt_receiving_status(42, Status::Success, Endpoint::new(0x83)),
             "interrupt_receiving_status",
         );
     }
@@ -1235,33 +1131,20 @@ fn interop_alloc_bulk_streams() {
             |p| {
                 matches!(
                     p,
-                    Packet::AllocBulkStreams {
-                        id: 50,
-                        endpoints: 0x03,
-                        no_streams: 16,
-                        ..
-                    }
+                    Packet::Request(RequestPacket { id: 50, kind: RequestKind::AllocBulkStreams { endpoints: 0x03, no_streams: 16 } })
                 )
             },
             "alloc_bulk_streams",
         );
         rust_to_c(
             true,
-            Packet::AllocBulkStreams {
-                id: 50,
-                endpoints: 0x03,
-                no_streams: 16,
-            },
+            Packet::alloc_bulk_streams(50, 0x03, 16),
             "alloc_bulk_streams",
         );
         byte_compare(
             false,
             c_encode,
-            Packet::AllocBulkStreams {
-                id: 50,
-                endpoints: 0x03,
-                no_streams: 16,
-            },
+            Packet::alloc_bulk_streams(50, 0x03, 16),
             "alloc_bulk_streams",
         );
     }
@@ -1280,30 +1163,20 @@ fn interop_free_bulk_streams() {
             |p| {
                 matches!(
                     p,
-                    Packet::FreeBulkStreams {
-                        id: 51,
-                        endpoints: 0x03,
-                        ..
-                    }
+                    Packet::Request(RequestPacket { id: 51, kind: RequestKind::FreeBulkStreams { endpoints: 0x03 } })
                 )
             },
             "free_bulk_streams",
         );
         rust_to_c(
             true,
-            Packet::FreeBulkStreams {
-                id: 51,
-                endpoints: 0x03,
-            },
+            Packet::free_bulk_streams(51, 0x03),
             "free_bulk_streams",
         );
         byte_compare(
             false,
             c_encode,
-            Packet::FreeBulkStreams {
-                id: 51,
-                endpoints: 0x03,
-            },
+            Packet::free_bulk_streams(51, 0x03),
             "free_bulk_streams",
         );
     }
@@ -1323,28 +1196,18 @@ fn interop_bulk_streams_status() {
         c_to_rust(
             true,
             c_encode,
-            |p| matches!(p, Packet::BulkStreamsStatus { id: 52, .. }),
+            |p| matches!(p, Packet::Request(RequestPacket { id: 52, kind: RequestKind::BulkStreamsStatus { .. } })),
             "bulk_streams_status",
         );
         rust_to_c(
             false,
-            Packet::BulkStreamsStatus {
-                id: 52,
-                endpoints: 0x03,
-                no_streams: 16,
-                status: Status::Success,
-            },
+            Packet::bulk_streams_status(52, 0x03, 16, Status::Success),
             "bulk_streams_status",
         );
         byte_compare(
             true,
             c_encode,
-            Packet::BulkStreamsStatus {
-                id: 52,
-                endpoints: 0x03,
-                no_streams: 16,
-                status: Status::Success,
-            },
+            Packet::bulk_streams_status(52, 0x03, 16, Status::Success),
             "bulk_streams_status",
         );
     }
@@ -1361,18 +1224,18 @@ fn interop_cancel_data_packet() {
         c_to_rust(
             false,
             c_encode,
-            |p| matches!(p, Packet::CancelDataPacket { id: 60, .. }),
+            |p| matches!(p, Packet::Request(RequestPacket { id: 60, kind: RequestKind::CancelDataPacket })),
             "cancel_data_packet",
         );
         rust_to_c(
             true,
-            Packet::CancelDataPacket { id: 60 },
+            Packet::cancel_data_packet(60),
             "cancel_data_packet",
         );
         byte_compare(
             false,
             c_encode,
-            Packet::CancelDataPacket { id: 60 },
+            Packet::cancel_data_packet(60),
             "cancel_data_packet",
         );
     }
@@ -1395,30 +1258,18 @@ fn interop_start_bulk_receiving() {
         c_to_rust(
             false,
             c_encode,
-            |p| matches!(p, Packet::StartBulkReceiving { id: 70, .. }),
+            |p| matches!(p, Packet::Request(RequestPacket { id: 70, kind: RequestKind::StartBulkReceiving { .. } })),
             "start_bulk_receiving",
         );
         rust_to_c(
             true,
-            Packet::StartBulkReceiving {
-                id: 70,
-                stream_id: 1,
-                bytes_per_transfer: 4096,
-                endpoint: Endpoint::new(0x82),
-                no_transfers: 8,
-            },
+            Packet::start_bulk_receiving(70, 1, 4096, Endpoint::new(0x82), 8),
             "start_bulk_receiving",
         );
         byte_compare(
             false,
             c_encode,
-            Packet::StartBulkReceiving {
-                id: 70,
-                stream_id: 1,
-                bytes_per_transfer: 4096,
-                endpoint: Endpoint::new(0x82),
-                no_transfers: 8,
-            },
+            Packet::start_bulk_receiving(70, 1, 4096, Endpoint::new(0x82), 8),
             "start_bulk_receiving",
         );
     }
@@ -1437,26 +1288,18 @@ fn interop_stop_bulk_receiving() {
         c_to_rust(
             false,
             c_encode,
-            |p| matches!(p, Packet::StopBulkReceiving { id: 71, .. }),
+            |p| matches!(p, Packet::Request(RequestPacket { id: 71, kind: RequestKind::StopBulkReceiving { .. } })),
             "stop_bulk_receiving",
         );
         rust_to_c(
             true,
-            Packet::StopBulkReceiving {
-                id: 71,
-                stream_id: 1,
-                endpoint: Endpoint::new(0x82),
-            },
+            Packet::stop_bulk_receiving(71, 1, Endpoint::new(0x82)),
             "stop_bulk_receiving",
         );
         byte_compare(
             false,
             c_encode,
-            Packet::StopBulkReceiving {
-                id: 71,
-                stream_id: 1,
-                endpoint: Endpoint::new(0x82),
-            },
+            Packet::stop_bulk_receiving(71, 1, Endpoint::new(0x82)),
             "stop_bulk_receiving",
         );
     }
@@ -1476,28 +1319,18 @@ fn interop_bulk_receiving_status() {
         c_to_rust(
             true,
             c_encode,
-            |p| matches!(p, Packet::BulkReceivingStatus { id: 72, .. }),
+            |p| matches!(p, Packet::Request(RequestPacket { id: 72, kind: RequestKind::BulkReceivingStatus { .. } })),
             "bulk_receiving_status",
         );
         rust_to_c(
             false,
-            Packet::BulkReceivingStatus {
-                id: 72,
-                stream_id: 1,
-                endpoint: Endpoint::new(0x82),
-                status: Status::Success,
-            },
+            Packet::bulk_receiving_status(72, 1, Endpoint::new(0x82), Status::Success),
             "bulk_receiving_status",
         );
         byte_compare(
             true,
             c_encode,
-            Packet::BulkReceivingStatus {
-                id: 72,
-                stream_id: 1,
-                endpoint: Endpoint::new(0x82),
-                status: Status::Success,
-            },
+            Packet::bulk_receiving_status(72, 1, Endpoint::new(0x82), Status::Success),
             "bulk_receiving_status",
         );
     }
@@ -2401,19 +2234,13 @@ fn verify_interrupt_receiving_non_input_ep() {
     rust_drain_packets(&mut rp);
 
     // Endpoint 0x02 = OUT, should be rejected (interrupt receiving requires IN endpoint)
-    let result = rp.send(Packet::StartInterruptReceiving {
-        id: 1,
-        endpoint: Endpoint::new(0x02),
-    });
+    let result = rp.send(Packet::start_interrupt_receiving(1, Endpoint::new(0x02)));
     assert!(
         result.is_err(),
         "Should reject non-input endpoint for start_interrupt_receiving"
     );
 
-    let result = rp.send(Packet::StopInterruptReceiving {
-        id: 2,
-        endpoint: Endpoint::new(0x02),
-    });
+    let result = rp.send(Packet::stop_interrupt_receiving(2, Endpoint::new(0x02)));
     assert!(
         result.is_err(),
         "Should reject non-input endpoint for stop_interrupt_receiving"
@@ -2428,13 +2255,7 @@ fn verify_bulk_receiving_non_input_ep() {
     rp.feed(&peer_hello);
     rust_drain_packets(&mut rp);
 
-    let result = rp.send(Packet::StartBulkReceiving {
-        id: 1,
-        stream_id: 0,
-        bytes_per_transfer: 4096,
-        endpoint: Endpoint::new(0x02), // OUT, should fail
-        no_transfers: 4,
-    });
+    let result = rp.send(Packet::start_bulk_receiving(1, 0, 4096, Endpoint::new(0x02), 4));
     assert!(
         result.is_err(),
         "Should reject non-input endpoint for start_bulk_receiving"
@@ -2449,13 +2270,7 @@ fn verify_bulk_transfer_too_large() {
     rp.feed(&peer_hello);
     rust_drain_packets(&mut rp);
 
-    let result = rp.send(Packet::StartBulkReceiving {
-        id: 1,
-        stream_id: 0,
-        bytes_per_transfer: 256 * 1024 * 1024, // exceeds MAX_BULK_TRANSFER_SIZE
-        endpoint: Endpoint::new(0x82),
-        no_transfers: 4,
-    });
+    let result = rp.send(Packet::start_bulk_receiving(1, 0, 256 * 1024 * 1024, Endpoint::new(0x82), 4));
     assert!(result.is_err(), "Should reject oversized bulk transfer");
 }
 

@@ -642,15 +642,6 @@ impl Parser {
                     return Err(Error::InterfaceCountTooLarge(*interface_count));
                 }
             }
-            Packet::StartInterruptReceiving { endpoint, .. }
-            | Packet::StopInterruptReceiving { endpoint, .. }
-            | Packet::InterruptReceivingStatus { endpoint, .. } => {
-                if endpoint.is_output() {
-                    return Err(Error::NonInputEndpoint {
-                        endpoint: *endpoint,
-                    });
-                }
-            }
             Packet::FilterReject | Packet::FilterFilter { .. } => {
                 if sending {
                     if !self.peer_has_cap(Cap::Filter) {
@@ -673,38 +664,53 @@ impl Parser {
                     });
                 }
             }
-            Packet::StartBulkReceiving {
-                endpoint,
-                bytes_per_transfer,
-                ..
-            } => {
-                self.verify_bulk_recv_cap(sending)?;
-                if *bytes_per_transfer > crate::proto::MAX_BULK_TRANSFER_SIZE {
-                    return Err(Error::BulkTransferTooLarge {
-                        length: *bytes_per_transfer,
-                        max: crate::proto::MAX_BULK_TRANSFER_SIZE,
-                    });
-                }
-                if endpoint.is_output() {
-                    return Err(Error::NonInputEndpoint {
-                        endpoint: *endpoint,
-                    });
-                }
-            }
-            Packet::StopBulkReceiving { endpoint, .. } => {
-                self.verify_bulk_recv_cap(sending)?;
-                if endpoint.is_output() {
-                    return Err(Error::NonInputEndpoint {
-                        endpoint: *endpoint,
-                    });
-                }
-            }
-            Packet::BulkReceivingStatus { endpoint, .. } => {
-                self.verify_bulk_recv_cap(sending)?;
-                if endpoint.is_output() {
-                    return Err(Error::NonInputEndpoint {
-                        endpoint: *endpoint,
-                    });
+            Packet::Request(req) => {
+                use crate::packet::RequestKind;
+                match &req.kind {
+                    RequestKind::StartInterruptReceiving { endpoint, .. }
+                    | RequestKind::StopInterruptReceiving { endpoint, .. }
+                    | RequestKind::InterruptReceivingStatus { endpoint, .. } => {
+                        if endpoint.is_output() {
+                            return Err(Error::NonInputEndpoint {
+                                endpoint: *endpoint,
+                            });
+                        }
+                    }
+                    RequestKind::StartBulkReceiving {
+                        endpoint,
+                        bytes_per_transfer,
+                        ..
+                    } => {
+                        self.verify_bulk_recv_cap(sending)?;
+                        if *bytes_per_transfer > crate::proto::MAX_BULK_TRANSFER_SIZE {
+                            return Err(Error::BulkTransferTooLarge {
+                                length: *bytes_per_transfer,
+                                max: crate::proto::MAX_BULK_TRANSFER_SIZE,
+                            });
+                        }
+                        if endpoint.is_output() {
+                            return Err(Error::NonInputEndpoint {
+                                endpoint: *endpoint,
+                            });
+                        }
+                    }
+                    RequestKind::StopBulkReceiving { endpoint, .. } => {
+                        self.verify_bulk_recv_cap(sending)?;
+                        if endpoint.is_output() {
+                            return Err(Error::NonInputEndpoint {
+                                endpoint: *endpoint,
+                            });
+                        }
+                    }
+                    RequestKind::BulkReceivingStatus { endpoint, .. } => {
+                        self.verify_bulk_recv_cap(sending)?;
+                        if endpoint.is_output() {
+                            return Err(Error::NonInputEndpoint {
+                                endpoint: *endpoint,
+                            });
+                        }
+                    }
+                    _ => {}
                 }
             }
             Packet::Data(d) => {
@@ -870,7 +876,10 @@ impl Parser {
                 }
             }
             pkt_type::DEVICE_DISCONNECT => Ok(Packet::DeviceDisconnect),
-            pkt_type::RESET => Ok(Packet::Reset { id }),
+            pkt_type::RESET => Ok(Packet::Request(crate::packet::RequestPacket {
+                id,
+                kind: crate::packet::RequestKind::Reset,
+            })),
             pkt_type::INTERFACE_INFO => {
                 let hdr =
                     wire::InterfaceInfoHeader::read_from_bytes(type_header).map_err(wire_err!())?;
@@ -932,128 +941,112 @@ impl Parser {
             pkt_type::SET_CONFIGURATION => {
                 let hdr = wire::SetConfigurationHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
-                Ok(Packet::SetConfiguration {
-                    id,
-                    configuration: hdr.configuration,
-                })
+                Ok(Packet::set_configuration(id, hdr.configuration))
             }
-            pkt_type::GET_CONFIGURATION => Ok(Packet::GetConfiguration { id }),
+            pkt_type::GET_CONFIGURATION => Ok(Packet::get_configuration(id)),
             pkt_type::CONFIGURATION_STATUS => {
                 let hdr = wire::ConfigurationStatusHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
-                Ok(Packet::ConfigurationStatus {
+                Ok(Packet::configuration_status(
                     id,
-                    status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
-                    configuration: hdr.configuration,
-                })
+                    Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
+                    hdr.configuration,
+                ))
             }
             pkt_type::SET_ALT_SETTING => {
                 let hdr =
                     wire::SetAltSettingHeader::read_from_bytes(type_header).map_err(wire_err!())?;
-                Ok(Packet::SetAltSetting {
-                    id,
-                    interface: hdr.interface,
-                    alt: hdr.alt,
-                })
+                Ok(Packet::set_alt_setting(id, hdr.interface, hdr.alt))
             }
             pkt_type::GET_ALT_SETTING => {
                 let hdr =
                     wire::GetAltSettingHeader::read_from_bytes(type_header).map_err(wire_err!())?;
-                Ok(Packet::GetAltSetting {
-                    id,
-                    interface: hdr.interface,
-                })
+                Ok(Packet::get_alt_setting(id, hdr.interface))
             }
             pkt_type::ALT_SETTING_STATUS => {
                 let hdr = wire::AltSettingStatusHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
-                Ok(Packet::AltSettingStatus {
+                Ok(Packet::alt_setting_status(
                     id,
-                    status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
-                    interface: hdr.interface,
-                    alt: hdr.alt,
-                })
+                    Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
+                    hdr.interface,
+                    hdr.alt,
+                ))
             }
             pkt_type::START_ISO_STREAM => {
                 let hdr = wire::StartIsoStreamHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
-                Ok(Packet::StartIsoStream {
+                Ok(Packet::start_iso_stream(
                     id,
-                    endpoint: Endpoint::new(hdr.endpoint),
-                    pkts_per_urb: hdr.pkts_per_urb,
-                    no_urbs: hdr.no_urbs,
-                })
+                    Endpoint::new(hdr.endpoint),
+                    hdr.pkts_per_urb,
+                    hdr.no_urbs,
+                ))
             }
             pkt_type::STOP_ISO_STREAM => {
                 let hdr =
                     wire::StopIsoStreamHeader::read_from_bytes(type_header).map_err(wire_err!())?;
-                Ok(Packet::StopIsoStream {
-                    id,
-                    endpoint: Endpoint::new(hdr.endpoint),
-                })
+                Ok(Packet::stop_iso_stream(id, Endpoint::new(hdr.endpoint)))
             }
             pkt_type::ISO_STREAM_STATUS => {
                 let hdr = wire::IsoStreamStatusHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
-                Ok(Packet::IsoStreamStatus {
+                Ok(Packet::iso_stream_status(
                     id,
-                    status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
-                    endpoint: Endpoint::new(hdr.endpoint),
-                })
+                    Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
+                    Endpoint::new(hdr.endpoint),
+                ))
             }
             pkt_type::START_INTERRUPT_RECEIVING => {
                 let hdr = wire::StartInterruptReceivingHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
-                Ok(Packet::StartInterruptReceiving {
+                Ok(Packet::start_interrupt_receiving(
                     id,
-                    endpoint: Endpoint::new(hdr.endpoint),
-                })
+                    Endpoint::new(hdr.endpoint),
+                ))
             }
             pkt_type::STOP_INTERRUPT_RECEIVING => {
                 let hdr = wire::StopInterruptReceivingHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
-                Ok(Packet::StopInterruptReceiving {
+                Ok(Packet::stop_interrupt_receiving(
                     id,
-                    endpoint: Endpoint::new(hdr.endpoint),
-                })
+                    Endpoint::new(hdr.endpoint),
+                ))
             }
             pkt_type::INTERRUPT_RECEIVING_STATUS => {
                 let hdr = wire::InterruptReceivingStatusHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
-                Ok(Packet::InterruptReceivingStatus {
+                Ok(Packet::interrupt_receiving_status(
                     id,
-                    status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
-                    endpoint: Endpoint::new(hdr.endpoint),
-                })
+                    Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
+                    Endpoint::new(hdr.endpoint),
+                ))
             }
             pkt_type::ALLOC_BULK_STREAMS => {
                 let hdr = wire::AllocBulkStreamsHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
-                Ok(Packet::AllocBulkStreams {
+                Ok(Packet::alloc_bulk_streams(
                     id,
-                    endpoints: hdr.endpoints.get(),
-                    no_streams: hdr.no_streams.get(),
-                })
+                    hdr.endpoints.get(),
+                    hdr.no_streams.get(),
+                ))
             }
             pkt_type::FREE_BULK_STREAMS => {
                 let hdr = wire::FreeBulkStreamsHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
-                Ok(Packet::FreeBulkStreams {
-                    id,
-                    endpoints: hdr.endpoints.get(),
-                })
+                Ok(Packet::free_bulk_streams(id, hdr.endpoints.get()))
             }
             pkt_type::BULK_STREAMS_STATUS => {
                 let hdr = wire::BulkStreamsStatusHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
-                Ok(Packet::BulkStreamsStatus {
+                Ok(Packet::bulk_streams_status(
                     id,
-                    endpoints: hdr.endpoints.get(),
-                    no_streams: hdr.no_streams.get(),
-                    status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
-                })
+                    hdr.endpoints.get(),
+                    hdr.no_streams.get(),
+                    Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
+                ))
             }
-            pkt_type::CANCEL_DATA_PACKET => Ok(Packet::CancelDataPacket { id }),
+            pkt_type::CANCEL_DATA_PACKET => Ok(Packet::cancel_data_packet(id)),
             pkt_type::FILTER_REJECT => Ok(Packet::FilterReject),
             pkt_type::FILTER_FILTER => {
                 // Data is a null-terminated string of filter rules
@@ -1069,32 +1062,32 @@ impl Parser {
             pkt_type::START_BULK_RECEIVING => {
                 let hdr = wire::StartBulkReceivingHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
-                Ok(Packet::StartBulkReceiving {
+                Ok(Packet::start_bulk_receiving(
                     id,
-                    stream_id: hdr.stream_id.get(),
-                    bytes_per_transfer: hdr.bytes_per_transfer.get(),
-                    endpoint: Endpoint::new(hdr.endpoint),
-                    no_transfers: hdr.no_transfers,
-                })
+                    hdr.stream_id.get(),
+                    hdr.bytes_per_transfer.get(),
+                    Endpoint::new(hdr.endpoint),
+                    hdr.no_transfers,
+                ))
             }
             pkt_type::STOP_BULK_RECEIVING => {
                 let hdr = wire::StopBulkReceivingHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
-                Ok(Packet::StopBulkReceiving {
+                Ok(Packet::stop_bulk_receiving(
                     id,
-                    stream_id: hdr.stream_id.get(),
-                    endpoint: Endpoint::new(hdr.endpoint),
-                })
+                    hdr.stream_id.get(),
+                    Endpoint::new(hdr.endpoint),
+                ))
             }
             pkt_type::BULK_RECEIVING_STATUS => {
                 let hdr = wire::BulkReceivingStatusHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
-                Ok(Packet::BulkReceivingStatus {
+                Ok(Packet::bulk_receiving_status(
                     id,
-                    stream_id: hdr.stream_id.get(),
-                    endpoint: Endpoint::new(hdr.endpoint),
-                    status: Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
-                })
+                    hdr.stream_id.get(),
+                    Endpoint::new(hdr.endpoint),
+                    Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
+                ))
             }
             pkt_type::CONTROL_PACKET => {
                 let hdr =
@@ -1346,117 +1339,146 @@ impl Parser {
                     write_hdr!(hdr);
                 }
             }
-            Packet::SetConfiguration { configuration, .. } => {
-                write_hdr!(wire::SetConfigurationHeader {
-                    configuration: *configuration,
-                });
+            Packet::Request(ref req) => {
+                use crate::packet::RequestKind;
+                match &req.kind {
+                    RequestKind::SetConfiguration { configuration } => {
+                        write_hdr!(wire::SetConfigurationHeader {
+                            configuration: *configuration,
+                        });
+                    }
+                    RequestKind::GetConfiguration => {}
+                    RequestKind::ConfigurationStatus {
+                        status,
+                        configuration,
+                    } => {
+                        write_hdr!(wire::ConfigurationStatusHeader {
+                            status: *status as u8,
+                            configuration: *configuration,
+                        });
+                    }
+                    RequestKind::SetAltSetting { interface, alt } => {
+                        write_hdr!(wire::SetAltSettingHeader {
+                            interface: *interface,
+                            alt: *alt,
+                        });
+                    }
+                    RequestKind::GetAltSetting { interface } => {
+                        write_hdr!(wire::GetAltSettingHeader {
+                            interface: *interface,
+                        });
+                    }
+                    RequestKind::AltSettingStatus {
+                        status,
+                        interface,
+                        alt,
+                    } => {
+                        write_hdr!(wire::AltSettingStatusHeader {
+                            status: *status as u8,
+                            interface: *interface,
+                            alt: *alt,
+                        });
+                    }
+                    RequestKind::StartIsoStream {
+                        endpoint,
+                        pkts_per_urb,
+                        no_urbs,
+                    } => {
+                        write_hdr!(wire::StartIsoStreamHeader {
+                            endpoint: endpoint.raw(),
+                            pkts_per_urb: *pkts_per_urb,
+                            no_urbs: *no_urbs,
+                        });
+                    }
+                    RequestKind::StopIsoStream { endpoint } => {
+                        write_hdr!(wire::StopIsoStreamHeader {
+                            endpoint: endpoint.raw(),
+                        });
+                    }
+                    RequestKind::IsoStreamStatus { status, endpoint } => {
+                        write_hdr!(wire::IsoStreamStatusHeader {
+                            status: *status as u8,
+                            endpoint: endpoint.raw(),
+                        });
+                    }
+                    RequestKind::StartInterruptReceiving { endpoint } => {
+                        write_hdr!(wire::StartInterruptReceivingHeader {
+                            endpoint: endpoint.raw(),
+                        });
+                    }
+                    RequestKind::StopInterruptReceiving { endpoint } => {
+                        write_hdr!(wire::StopInterruptReceivingHeader {
+                            endpoint: endpoint.raw(),
+                        });
+                    }
+                    RequestKind::InterruptReceivingStatus { status, endpoint } => {
+                        write_hdr!(wire::InterruptReceivingStatusHeader {
+                            status: *status as u8,
+                            endpoint: endpoint.raw(),
+                        });
+                    }
+                    RequestKind::AllocBulkStreams {
+                        endpoints,
+                        no_streams,
+                    } => {
+                        write_hdr!(wire::AllocBulkStreamsHeader {
+                            endpoints: (*endpoints).into(),
+                            no_streams: (*no_streams).into(),
+                        });
+                    }
+                    RequestKind::FreeBulkStreams { endpoints } => {
+                        write_hdr!(wire::FreeBulkStreamsHeader {
+                            endpoints: (*endpoints).into(),
+                        });
+                    }
+                    RequestKind::BulkStreamsStatus {
+                        endpoints,
+                        no_streams,
+                        status,
+                    } => {
+                        write_hdr!(wire::BulkStreamsStatusHeader {
+                            endpoints: (*endpoints).into(),
+                            no_streams: (*no_streams).into(),
+                            status: *status as u8,
+                        });
+                    }
+                    RequestKind::CancelDataPacket => {}
+                    RequestKind::Reset => {}
+                    RequestKind::StartBulkReceiving {
+                        stream_id,
+                        bytes_per_transfer,
+                        endpoint,
+                        no_transfers,
+                    } => {
+                        write_hdr!(wire::StartBulkReceivingHeader {
+                            stream_id: (*stream_id).into(),
+                            bytes_per_transfer: (*bytes_per_transfer).into(),
+                            endpoint: endpoint.raw(),
+                            no_transfers: *no_transfers,
+                        });
+                    }
+                    RequestKind::StopBulkReceiving {
+                        stream_id,
+                        endpoint,
+                    } => {
+                        write_hdr!(wire::StopBulkReceivingHeader {
+                            stream_id: (*stream_id).into(),
+                            endpoint: endpoint.raw(),
+                        });
+                    }
+                    RequestKind::BulkReceivingStatus {
+                        stream_id,
+                        endpoint,
+                        status,
+                    } => {
+                        write_hdr!(wire::BulkReceivingStatusHeader {
+                            stream_id: (*stream_id).into(),
+                            endpoint: endpoint.raw(),
+                            status: *status as u8,
+                        });
+                    }
+                }
             }
-            Packet::GetConfiguration { .. } => {}
-            Packet::ConfigurationStatus {
-                status,
-                configuration,
-                ..
-            } => {
-                write_hdr!(wire::ConfigurationStatusHeader {
-                    status: *status as u8,
-                    configuration: *configuration,
-                });
-            }
-            Packet::SetAltSetting { interface, alt, .. } => {
-                write_hdr!(wire::SetAltSettingHeader {
-                    interface: *interface,
-                    alt: *alt,
-                });
-            }
-            Packet::GetAltSetting { interface, .. } => {
-                write_hdr!(wire::GetAltSettingHeader {
-                    interface: *interface,
-                });
-            }
-            Packet::AltSettingStatus {
-                status,
-                interface,
-                alt,
-                ..
-            } => {
-                write_hdr!(wire::AltSettingStatusHeader {
-                    status: *status as u8,
-                    interface: *interface,
-                    alt: *alt,
-                });
-            }
-            Packet::StartIsoStream {
-                endpoint,
-                pkts_per_urb,
-                no_urbs,
-                ..
-            } => {
-                write_hdr!(wire::StartIsoStreamHeader {
-                    endpoint: endpoint.raw(),
-                    pkts_per_urb: *pkts_per_urb,
-                    no_urbs: *no_urbs,
-                });
-            }
-            Packet::StopIsoStream { endpoint, .. } => {
-                write_hdr!(wire::StopIsoStreamHeader {
-                    endpoint: endpoint.raw(),
-                });
-            }
-            Packet::IsoStreamStatus {
-                status, endpoint, ..
-            } => {
-                write_hdr!(wire::IsoStreamStatusHeader {
-                    status: *status as u8,
-                    endpoint: endpoint.raw(),
-                });
-            }
-            Packet::StartInterruptReceiving { endpoint, .. } => {
-                write_hdr!(wire::StartInterruptReceivingHeader {
-                    endpoint: endpoint.raw(),
-                });
-            }
-            Packet::StopInterruptReceiving { endpoint, .. } => {
-                write_hdr!(wire::StopInterruptReceivingHeader {
-                    endpoint: endpoint.raw(),
-                });
-            }
-            Packet::InterruptReceivingStatus {
-                status, endpoint, ..
-            } => {
-                write_hdr!(wire::InterruptReceivingStatusHeader {
-                    status: *status as u8,
-                    endpoint: endpoint.raw(),
-                });
-            }
-            Packet::AllocBulkStreams {
-                endpoints,
-                no_streams,
-                ..
-            } => {
-                write_hdr!(wire::AllocBulkStreamsHeader {
-                    endpoints: (*endpoints).into(),
-                    no_streams: (*no_streams).into(),
-                });
-            }
-            Packet::FreeBulkStreams { endpoints, .. } => {
-                write_hdr!(wire::FreeBulkStreamsHeader {
-                    endpoints: (*endpoints).into(),
-                });
-            }
-            Packet::BulkStreamsStatus {
-                endpoints,
-                no_streams,
-                status,
-                ..
-            } => {
-                write_hdr!(wire::BulkStreamsStatusHeader {
-                    endpoints: (*endpoints).into(),
-                    no_streams: (*no_streams).into(),
-                    status: *status as u8,
-                });
-            }
-            Packet::CancelDataPacket { .. } => {}
-            Packet::Reset { .. } => {}
             Packet::FilterReject => {}
             Packet::FilterFilter { rules } => {
                 let s = filter::rules_to_string(rules, ",", "|")?;
@@ -1464,42 +1486,6 @@ impl Parser {
                 buf.extend_from_slice(&[0]); // null terminator
             }
             Packet::DeviceDisconnectAck => {}
-            Packet::StartBulkReceiving {
-                stream_id,
-                bytes_per_transfer,
-                endpoint,
-                no_transfers,
-                ..
-            } => {
-                write_hdr!(wire::StartBulkReceivingHeader {
-                    stream_id: (*stream_id).into(),
-                    bytes_per_transfer: (*bytes_per_transfer).into(),
-                    endpoint: endpoint.raw(),
-                    no_transfers: *no_transfers,
-                });
-            }
-            Packet::StopBulkReceiving {
-                stream_id,
-                endpoint,
-                ..
-            } => {
-                write_hdr!(wire::StopBulkReceivingHeader {
-                    stream_id: (*stream_id).into(),
-                    endpoint: endpoint.raw(),
-                });
-            }
-            Packet::BulkReceivingStatus {
-                stream_id,
-                endpoint,
-                status,
-                ..
-            } => {
-                write_hdr!(wire::BulkReceivingStatusHeader {
-                    stream_id: (*stream_id).into(),
-                    endpoint: endpoint.raw(),
-                    status: *status as u8,
-                });
-            }
             Packet::Data(d) => {
                 use crate::packet::DataKind;
                 match &d.kind {
@@ -1650,6 +1636,7 @@ impl Parser {
 mod tests {
     use super::*;
     use crate::caps::{Cap, Caps};
+    use crate::packet::RequestKind;
 
     fn make_config(is_host: bool) -> ParserConfig {
         let mut caps = Caps::new();
@@ -1735,10 +1722,7 @@ mod tests {
         // Now guest sends set_configuration (guest is NOT host, so SetConfiguration
         // is command_for_host=true when sending from guest)
         guest
-            .send(Packet::SetConfiguration {
-                id: 42,
-                configuration: 1,
-            })
+            .send(Packet::set_configuration(42, 1))
             .unwrap();
 
         let pkt_bytes = guest.drain().unwrap();
@@ -1747,13 +1731,12 @@ mod tests {
         let mut found = false;
         while let Some(event) = host.poll() {
             if let Event::Packet(packet) = event {
-                if let Packet::SetConfiguration {
-                    id, configuration, ..
-                } = *packet
-                {
-                    assert_eq!(id, 42);
-                    assert_eq!(configuration, 1);
-                    found = true;
+                if let Packet::Request(ref req) = *packet {
+                    if let RequestKind::SetConfiguration { configuration } = req.kind {
+                        assert_eq!(req.id, 42);
+                        assert_eq!(configuration, 1);
+                        found = true;
+                    }
                 }
             }
         }
