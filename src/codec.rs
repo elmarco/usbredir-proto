@@ -23,7 +23,7 @@ use crate::parser::{Event, Parser, ParserConfig};
 
 /// A [`tokio_util::codec`] implementation wrapping [`Parser`].
 ///
-/// Decodes inbound bytes into [`Event`]s and encodes outbound [`Packet`]s.
+/// Decodes inbound bytes into [`Packet`]s and encodes outbound [`Packet`]s.
 pub struct UsbredirCodec {
     parser: Parser,
 }
@@ -48,7 +48,7 @@ impl UsbredirCodec {
 }
 
 impl Decoder for UsbredirCodec {
-    type Item = Event;
+    type Item = Packet;
     type Error = Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>> {
@@ -56,7 +56,14 @@ impl Decoder for UsbredirCodec {
             let data = src.split();
             self.parser.feed(&data);
         }
-        Ok(self.parser.poll())
+        loop {
+            match self.parser.poll() {
+                Some(Event::Packet(p)) => return Ok(Some(*p)),
+                Some(Event::ParseError(e)) => return Err(e),
+                Some(_) => continue,
+                None => return Ok(None),
+            }
+        }
     }
 }
 
