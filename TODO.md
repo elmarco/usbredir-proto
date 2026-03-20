@@ -57,10 +57,10 @@
   Done: removed the `config` field from `Parser` entirely. All needed values (`caps`,
   `no_hello`, `version`) are extracted in `new()` and the dead `config()` accessor is removed.
 
-- [ ] **`Caps::from_le_bytes` silently truncates extra words**
-  If the peer sends more capability words than `CAPS_SIZE`, extra bytes are silently
-  dropped. The peer thinks both sides have it, your side doesn't. Consider storing the
-  full received bitset (variable-length) or warning on truncation.
+- [x] **`Caps::from_le_bytes` silently truncates extra words**
+  Done: documented that truncation is safe because `negotiated()` requires both sides
+  to set a cap, and our side can never set caps beyond `CAPS_SIZE`. Matches C library
+  behavior.
 
 - [ ] **`poll_packet()` silently discards errors**
   Documented but dangerous as a default API. Users should explicitly opt into ignoring

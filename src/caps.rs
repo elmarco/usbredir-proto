@@ -79,10 +79,17 @@ impl Caps {
 
     /// Decode capabilities from little-endian wire bytes.
     ///
-    /// Unknown/unrecognized bits are silently preserved for forward compatibility
-    /// — a newer peer may advertise capabilities this version doesn't know about.
-    /// They are stored in the bitset and will be included when re-serialized, but
-    /// `negotiated()` will never activate them since our side won't set them.
+    /// Unknown/unrecognized bits within the first [`CAPS_SIZE`] words are silently
+    /// preserved for forward compatibility — a newer peer may advertise capabilities
+    /// this version doesn't know about. They are stored in the bitset and will be
+    /// included when re-serialized, but `negotiated()` will never activate them
+    /// since our side won't set them.
+    ///
+    /// If the peer sends more than `CAPS_SIZE` u32 words, the extra words are
+    /// silently truncated. This matches the C `usbredirparser` behavior. Since
+    /// `negotiated()` requires both sides to set a cap, and our side can never set
+    /// a cap beyond `CAPS_SIZE`, truncation is safe — the extra caps would never
+    /// be activated anyway.
     #[must_use]
     pub fn from_le_bytes(data: &[u8]) -> Self {
         let mut caps = Self::default();
