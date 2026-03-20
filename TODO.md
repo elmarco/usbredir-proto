@@ -41,10 +41,9 @@
   Done: `send()` now accepts `impl Borrow<Packet>`, so callers can pass either
   `&Packet` (existing code unchanged) or owned `Packet` (no unnecessary borrow).
 
-- [ ] **Address `usize` truncation on small targets**
-  `pkt_length as usize` casts in `parser.rs` — on 16-bit targets, `MAX_PACKET_SIZE`
-  (128 MiB + 1 KiB) doesn't fit in `usize`. Either add a `usize` assertion or gate
-  `no_std` support to `>= 32-bit`.
+- [x] **Address `usize` truncation on small targets**
+  Done: added compile-time assertion in `proto.rs` that `usize` is at least 32 bits.
+  Fails at compile time on 16-bit targets instead of silently truncating.
 
 - [ ] **Document or reconsider `Box<Packet>` in events**
   `Event = Result<Box<Packet>>` heap-allocates every decoded packet. `Packet` is large

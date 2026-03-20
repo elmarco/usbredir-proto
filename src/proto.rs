@@ -5,6 +5,12 @@ pub const MAX_BULK_TRANSFER_SIZE: u32 = 128 * 1024 * 1024;
 /// Maximum total packet size (type-specific header + data payload).
 pub const MAX_PACKET_SIZE: u32 = 1024 + MAX_BULK_TRANSFER_SIZE;
 
+// Ensure usize is at least 32 bits — packet lengths are u32 and cast to usize.
+const _: () = assert!(
+    core::mem::size_of::<usize>() >= core::mem::size_of::<u32>(),
+    "usbredir-proto requires a target with at least 32-bit usize"
+);
+
 /// Wire packet type IDs matching the C `usb_redir_type` enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u32)]
