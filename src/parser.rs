@@ -486,7 +486,11 @@ impl Parser {
 
     fn do_parse(&mut self) {
         loop {
-            // Skip phase (error recovery)
+            // Skip phase (error recovery): after a malformed packet, we skip
+            // `pkt_length` bytes (the body declared by the header). This can be up
+            // to MAX_PACKET_SIZE (~128 MiB + 1 KiB). The skip is drained
+            // incrementally via split_to so memory usage stays bounded by the
+            // amount of data actually buffered, not by the skip target.
             if self.to_skip > 0 {
                 let skip = self.to_skip.min(self.input.len());
                 let _ = self.input.split_to(skip);
