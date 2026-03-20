@@ -50,6 +50,63 @@ pub enum PktType {
     BufferedBulkPacket = 104,
 }
 
+/// Direction constraint for a packet type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Direction {
+    /// Sent by the guest (commands to the host).
+    ToHost,
+    /// Sent by the host (status/info to the guest).
+    ToGuest,
+    /// Can be sent in either direction.
+    Bidirectional,
+}
+
+impl PktType {
+    /// Returns the direction constraint for this packet type.
+    pub fn direction(self) -> Direction {
+        match self {
+            // Host → Guest (status/info)
+            PktType::DeviceConnect
+            | PktType::DeviceDisconnect
+            | PktType::InterfaceInfo
+            | PktType::EpInfo
+            | PktType::ConfigurationStatus
+            | PktType::AltSettingStatus
+            | PktType::IsoStreamStatus
+            | PktType::InterruptReceivingStatus
+            | PktType::BulkStreamsStatus
+            | PktType::BulkReceivingStatus
+            | PktType::BufferedBulkPacket => Direction::ToGuest,
+
+            // Guest → Host (commands/requests)
+            PktType::Reset
+            | PktType::SetConfiguration
+            | PktType::GetConfiguration
+            | PktType::SetAltSetting
+            | PktType::GetAltSetting
+            | PktType::StartIsoStream
+            | PktType::StopIsoStream
+            | PktType::StartInterruptReceiving
+            | PktType::StopInterruptReceiving
+            | PktType::AllocBulkStreams
+            | PktType::FreeBulkStreams
+            | PktType::CancelDataPacket
+            | PktType::FilterReject
+            | PktType::DeviceDisconnectAck
+            | PktType::StartBulkReceiving
+            | PktType::StopBulkReceiving => Direction::ToHost,
+
+            // Bidirectional
+            PktType::Hello
+            | PktType::FilterFilter
+            | PktType::ControlPacket
+            | PktType::BulkPacket
+            | PktType::IsoPacket
+            | PktType::InterruptPacket => Direction::Bidirectional,
+        }
+    }
+}
+
 impl TryFrom<u32> for PktType {
     type Error = u32;
 

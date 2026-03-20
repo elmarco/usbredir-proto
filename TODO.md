@@ -54,11 +54,11 @@
   Done: duplicate Hello now emits `Err(Error::DuplicateHello)` and does not push the
   packet as an event. The existing `Error::DuplicateHello` variant is now used.
 
-- [ ] **Simplify direction logic in `get_type_header_len()`**
-  The `sending` flag inverts `command_for_host`, making the ~200-line match hard to follow.
-  Consider encoding the direction constraint in `PktType` itself (e.g., a method
-  `PktType::direction() -> Direction` returning `HostToGuest | GuestToHost | Bidirectional`),
-  reducing the per-variant check to a 3-line function.
+- [x] **Simplify direction logic in `get_type_header_len()`**
+  Done: added `Direction` enum and `PktType::direction()` method to `proto.rs`.
+  `get_type_header_len()` now checks direction in 3 lines upfront, then a clean
+  match on just header sizes (~70 lines, down from ~220). `verify_packet()` also
+  simplified with `R::IS_HOST ^ sending`.
 
 - [ ] **Remove or deprecate `poll_packet()`**
   Silently discards all errors. The doc comment already warns about this, but its existence
@@ -73,10 +73,10 @@
   The `impl Borrow<Packet>` bound adds complexity without clear benefit. `Borrow` is
   idiomatically for collections/lookup, not function arguments. Use `&Packet` directly.
 
-- [ ] **Make `Event` a proper enum instead of a type alias**
-  `Event = Result<Box<Packet>>` hides that errors are also queued. A dedicated
-  `enum Event { Packet(Box<Packet>), Error(Error) }` would be more self-documenting
-  and allow adding event types (e.g., `PeerHelloReceived`) without breaking the API.
+- [x] **Make `Event` a proper enum instead of a type alias**
+  Done: replaced `type Event = Result<Box<Packet>>` with
+  `enum Event { Packet(Box<Packet>), Error(Error) }`. Updated all match sites
+  in parser, codec, tests, and benchmarks.
 
 ## Low priority
 

@@ -144,13 +144,16 @@ impl ParserConfig {
 
 /// An event produced by [`Parser::poll()`] or [`Parser::events()`].
 ///
-/// This is a `Result<Box<Packet>, Error>`: `Ok(packet)` for a successfully
-/// decoded packet, `Err(error)` for a parse error encountered during decoding.
-///
 /// `Packet` is boxed because the `EpInfo` variant is ~288 bytes; without boxing,
 /// every `VecDeque` slot in the event queue would be that large. Common
 /// hot-path packets (`Data`, `Request`) are much smaller but share the enum.
-pub type Event = Result<Box<Packet>>;
+#[derive(Debug)]
+pub enum Event {
+    /// A successfully decoded packet.
+    Packet(Box<Packet>),
+    /// A parse error encountered during decoding.
+    Error(Error),
+}
 
 /// Parse state machine: tracks whether we're waiting for a packet header
 /// or already have a parsed header and are waiting for the body bytes.
@@ -281,205 +284,64 @@ impl<R: Role> Parser<R> {
     }
 
     fn get_type_header_len(&self, pkt_type: PktType, sending: bool) -> Result<usize> {
-        let mut command_for_host = R::IS_HOST;
-        if sending {
-            command_for_host = !command_for_host;
+        use crate::proto::Direction;
+
+        // Check direction constraint. When sending, the expected direction is
+        // the opposite of our role (we send commands *to* the peer).
+        let command_for_host = R::IS_HOST ^ sending;
+        match pkt_type.direction() {
+            Direction::ToHost if !command_for_host => return Err(Error::WrongDirectionPacket),
+            Direction::ToGuest if command_for_host => return Err(Error::WrongDirectionPacket),
+            _ => {}
         }
 
         let len = match pkt_type {
             PktType::Hello => core::mem::size_of::<wire::HelloHeader>(),
             PktType::DeviceConnect => {
-                if !command_for_host {
-                    if self.negotiated(Cap::ConnectDeviceVersion) {
-                        core::mem::size_of::<wire::DeviceConnectHeader>()
-                    } else {
-                        core::mem::size_of::<wire::DeviceConnectHeaderNoVersion>()
-                    }
+                if self.negotiated(Cap::ConnectDeviceVersion) {
+                    core::mem::size_of::<wire::DeviceConnectHeader>()
                 } else {
-                    return Err(Error::WrongDirectionPacket);
-                }
-            }
-            PktType::DeviceDisconnect => {
-                if !command_for_host {
-                    0
-                } else {
-                    return Err(Error::WrongDirectionPacket);
-                }
-            }
-            PktType::Reset => {
-                if command_for_host {
-                    0
-                } else {
-                    return Err(Error::WrongDirectionPacket);
-                }
-            }
-            PktType::InterfaceInfo => {
-                if !command_for_host {
-                    core::mem::size_of::<wire::InterfaceInfoHeader>()
-                } else {
-                    return Err(Error::WrongDirectionPacket);
+                    core::mem::size_of::<wire::DeviceConnectHeaderNoVersion>()
                 }
             }
             PktType::EpInfo => {
-                if !command_for_host {
-                    if self.negotiated(Cap::BulkStreams) {
-                        core::mem::size_of::<wire::EpInfoHeader>()
-                    } else if self.negotiated(Cap::EpInfoMaxPacketSize) {
-                        core::mem::size_of::<wire::EpInfoHeaderNoMaxStreams>()
-                    } else {
-                        core::mem::size_of::<wire::EpInfoHeaderNoMaxPktsz>()
-                    }
+                if self.negotiated(Cap::BulkStreams) {
+                    core::mem::size_of::<wire::EpInfoHeader>()
+                } else if self.negotiated(Cap::EpInfoMaxPacketSize) {
+                    core::mem::size_of::<wire::EpInfoHeaderNoMaxStreams>()
                 } else {
-                    return Err(Error::WrongDirectionPacket);
+                    core::mem::size_of::<wire::EpInfoHeaderNoMaxPktsz>()
                 }
             }
-            PktType::SetConfiguration => {
-                if command_for_host {
-                    core::mem::size_of::<wire::SetConfigurationHeader>()
-                } else {
-                    return Err(Error::WrongDirectionPacket);
-                }
-            }
-            PktType::GetConfiguration => {
-                if command_for_host {
-                    0
-                } else {
-                    return Err(Error::WrongDirectionPacket);
-                }
-            }
+            PktType::InterfaceInfo => core::mem::size_of::<wire::InterfaceInfoHeader>(),
+            PktType::SetConfiguration => core::mem::size_of::<wire::SetConfigurationHeader>(),
             PktType::ConfigurationStatus => {
-                if !command_for_host {
-                    core::mem::size_of::<wire::ConfigurationStatusHeader>()
-                } else {
-                    return Err(Error::WrongDirectionPacket);
-                }
+                core::mem::size_of::<wire::ConfigurationStatusHeader>()
             }
-            PktType::SetAltSetting => {
-                if command_for_host {
-                    core::mem::size_of::<wire::SetAltSettingHeader>()
-                } else {
-                    return Err(Error::WrongDirectionPacket);
-                }
-            }
-            PktType::GetAltSetting => {
-                if command_for_host {
-                    core::mem::size_of::<wire::GetAltSettingHeader>()
-                } else {
-                    return Err(Error::WrongDirectionPacket);
-                }
-            }
-            PktType::AltSettingStatus => {
-                if !command_for_host {
-                    core::mem::size_of::<wire::AltSettingStatusHeader>()
-                } else {
-                    return Err(Error::WrongDirectionPacket);
-                }
-            }
-            PktType::StartIsoStream => {
-                if command_for_host {
-                    core::mem::size_of::<wire::StartIsoStreamHeader>()
-                } else {
-                    return Err(Error::WrongDirectionPacket);
-                }
-            }
-            PktType::StopIsoStream => {
-                if command_for_host {
-                    core::mem::size_of::<wire::StopIsoStreamHeader>()
-                } else {
-                    return Err(Error::WrongDirectionPacket);
-                }
-            }
-            PktType::IsoStreamStatus => {
-                if !command_for_host {
-                    core::mem::size_of::<wire::IsoStreamStatusHeader>()
-                } else {
-                    return Err(Error::WrongDirectionPacket);
-                }
-            }
+            PktType::SetAltSetting => core::mem::size_of::<wire::SetAltSettingHeader>(),
+            PktType::GetAltSetting => core::mem::size_of::<wire::GetAltSettingHeader>(),
+            PktType::AltSettingStatus => core::mem::size_of::<wire::AltSettingStatusHeader>(),
+            PktType::StartIsoStream => core::mem::size_of::<wire::StartIsoStreamHeader>(),
+            PktType::StopIsoStream => core::mem::size_of::<wire::StopIsoStreamHeader>(),
+            PktType::IsoStreamStatus => core::mem::size_of::<wire::IsoStreamStatusHeader>(),
             PktType::StartInterruptReceiving => {
-                if command_for_host {
-                    core::mem::size_of::<wire::StartInterruptReceivingHeader>()
-                } else {
-                    return Err(Error::WrongDirectionPacket);
-                }
+                core::mem::size_of::<wire::StartInterruptReceivingHeader>()
             }
             PktType::StopInterruptReceiving => {
-                if command_for_host {
-                    core::mem::size_of::<wire::StopInterruptReceivingHeader>()
-                } else {
-                    return Err(Error::WrongDirectionPacket);
-                }
+                core::mem::size_of::<wire::StopInterruptReceivingHeader>()
             }
             PktType::InterruptReceivingStatus => {
-                if !command_for_host {
-                    core::mem::size_of::<wire::InterruptReceivingStatusHeader>()
-                } else {
-                    return Err(Error::WrongDirectionPacket);
-                }
+                core::mem::size_of::<wire::InterruptReceivingStatusHeader>()
             }
-            PktType::AllocBulkStreams => {
-                if command_for_host {
-                    core::mem::size_of::<wire::AllocBulkStreamsHeader>()
-                } else {
-                    return Err(Error::WrongDirectionPacket);
-                }
-            }
-            PktType::FreeBulkStreams => {
-                if command_for_host {
-                    core::mem::size_of::<wire::FreeBulkStreamsHeader>()
-                } else {
-                    return Err(Error::WrongDirectionPacket);
-                }
-            }
-            PktType::BulkStreamsStatus => {
-                if !command_for_host {
-                    core::mem::size_of::<wire::BulkStreamsStatusHeader>()
-                } else {
-                    return Err(Error::WrongDirectionPacket);
-                }
-            }
-            PktType::CancelDataPacket => {
-                if command_for_host {
-                    0
-                } else {
-                    return Err(Error::WrongDirectionPacket);
-                }
-            }
-            PktType::FilterReject => {
-                if command_for_host {
-                    0
-                } else {
-                    return Err(Error::WrongDirectionPacket);
-                }
-            }
-            PktType::FilterFilter => 0,
-            PktType::DeviceDisconnectAck => {
-                if command_for_host {
-                    0
-                } else {
-                    return Err(Error::WrongDirectionPacket);
-                }
-            }
+            PktType::AllocBulkStreams => core::mem::size_of::<wire::AllocBulkStreamsHeader>(),
+            PktType::FreeBulkStreams => core::mem::size_of::<wire::FreeBulkStreamsHeader>(),
+            PktType::BulkStreamsStatus => core::mem::size_of::<wire::BulkStreamsStatusHeader>(),
             PktType::StartBulkReceiving => {
-                if command_for_host {
-                    core::mem::size_of::<wire::StartBulkReceivingHeader>()
-                } else {
-                    return Err(Error::WrongDirectionPacket);
-                }
+                core::mem::size_of::<wire::StartBulkReceivingHeader>()
             }
-            PktType::StopBulkReceiving => {
-                if command_for_host {
-                    core::mem::size_of::<wire::StopBulkReceivingHeader>()
-                } else {
-                    return Err(Error::WrongDirectionPacket);
-                }
-            }
+            PktType::StopBulkReceiving => core::mem::size_of::<wire::StopBulkReceivingHeader>(),
             PktType::BulkReceivingStatus => {
-                if !command_for_host {
-                    core::mem::size_of::<wire::BulkReceivingStatusHeader>()
-                } else {
-                    return Err(Error::WrongDirectionPacket);
-                }
+                core::mem::size_of::<wire::BulkReceivingStatusHeader>()
             }
             PktType::ControlPacket => core::mem::size_of::<wire::ControlPacketHeader>(),
             PktType::BulkPacket => {
@@ -491,13 +353,14 @@ impl<R: Role> Parser<R> {
             }
             PktType::IsoPacket => core::mem::size_of::<wire::IsoPacketHeader>(),
             PktType::InterruptPacket => core::mem::size_of::<wire::InterruptPacketHeader>(),
-            PktType::BufferedBulkPacket => {
-                if !command_for_host {
-                    core::mem::size_of::<wire::BufferedBulkPacketHeader>()
-                } else {
-                    return Err(Error::WrongDirectionPacket);
-                }
-            }
+            PktType::BufferedBulkPacket => core::mem::size_of::<wire::BufferedBulkPacketHeader>(),
+            PktType::DeviceDisconnect
+            | PktType::Reset
+            | PktType::GetConfiguration
+            | PktType::CancelDataPacket
+            | PktType::FilterReject
+            | PktType::FilterFilter
+            | PktType::DeviceDisconnectAck => 0,
         };
 
         Ok(len)
@@ -550,11 +413,12 @@ impl<R: Role> Parser<R> {
     /// **silently discarded**. Prefer [`poll()`](Self::poll) or
     /// [`events()`](Self::events) in production code to avoid missing protocol
     /// violations or connection-level errors.
+    #[deprecated(since = "0.2.0", note = "silently discards errors; use poll() or events() instead")]
     pub fn poll_packet(&mut self) -> Option<Box<Packet>> {
         loop {
             match self.events.pop_front()? {
-                Ok(p) => return Some(p),
-                Err(_) => continue,
+                Event::Packet(p) => return Some(p),
+                Event::Error(_) => continue,
             }
         }
     }
@@ -608,7 +472,7 @@ impl<R: Role> Parser<R> {
                             let _ = self.input.split_to(hlen);
                             self.to_skip = pkt_length as usize;
                             self.events
-                                .push_back(Err(Error::UnknownPacketType(pkt_type_raw)));
+                                .push_back(Event::Error(Error::UnknownPacketType(pkt_type_raw)));
                             continue;
                         }
                     };
@@ -619,7 +483,7 @@ impl<R: Role> Parser<R> {
                         Err(e) => {
                             let _ = self.input.split_to(hlen);
                             self.to_skip = pkt_length as usize;
-                            self.events.push_back(Err(e));
+                            self.events.push_back(Event::Error(e));
                             continue;
                         }
                     };
@@ -629,7 +493,7 @@ impl<R: Role> Parser<R> {
                         let _ = self.input.split_to(hlen);
                         self.to_skip = pkt_length as usize;
                         self.events
-                            .push_back(Err(Error::PacketTooLarge {
+                            .push_back(Event::Error(Error::PacketTooLarge {
                                 length: pkt_length,
                                 max: MAX_PACKET_SIZE,
                             }));
@@ -643,7 +507,7 @@ impl<R: Role> Parser<R> {
                         let _ = self.input.split_to(hlen);
                         self.to_skip = pkt_length as usize;
                         self.events
-                            .push_back(Err(Error::InvalidPacketLength {
+                            .push_back(Event::Error(Error::InvalidPacketLength {
                                 packet_type: pkt_type,
                                 length: pkt_length,
                             }));
@@ -689,7 +553,7 @@ impl<R: Role> Parser<R> {
                             } = packet
                             {
                                 if self.peer_caps.is_some() {
-                                    self.events.push_back(Err(Error::DuplicateHello));
+                                    self.events.push_back(Event::Error(Error::DuplicateHello));
                                     self.state = ParseState::Header;
                                     continue;
                                 }
@@ -705,10 +569,10 @@ impl<R: Role> Parser<R> {
                                     );
                                 }
                             }
-                            self.events.push_back(Ok(Box::new(packet)));
+                            self.events.push_back(Event::Packet(Box::new(packet)));
                         }
                         Err(e) => {
-                            self.events.push_back(Err(e));
+                            self.events.push_back(Event::Error(e));
                         }
                     }
 
@@ -721,10 +585,7 @@ impl<R: Role> Parser<R> {
     /// Verify a decoded packet, matching C's usbredirparser_verify_type_header.
     /// Called on both the receive path (after decode) and the send path (before encode).
     fn verify_packet(&self, packet: &Packet, sending: bool) -> Result<()> {
-        let mut command_for_host = R::IS_HOST;
-        if sending {
-            command_for_host = !command_for_host;
-        }
+        let command_for_host = R::IS_HOST ^ sending;
 
         match packet {
             Packet::InterfaceInfo(info) => {
@@ -1272,8 +1133,7 @@ impl<R: Role> Parser<R> {
     // Sans-IO output
     /// Encode and enqueue a packet for output. The wire bytes become available
     /// via [`drain()`](Self::drain) or [`drain_output()`](Self::drain_output).
-    pub fn send(&mut self, packet: impl core::borrow::Borrow<Packet>) -> Result<()> {
-        let packet = packet.borrow();
+    pub fn send(&mut self, packet: &Packet) -> Result<()> {
         // Hello must be sendable before negotiation; all other packets require
         // peer caps so that capability-dependent wire formats are correct.
         if !matches!(*packet, Packet::Hello { .. }) && self.peer_caps.is_none() {
@@ -1742,7 +1602,7 @@ mod tests {
         // Guest should emit a Log (peer info) + the hello Packet
         let mut got_hello = false;
         while let Some(event) = guest.poll() {
-            if let Ok(packet) = event {
+            if let Event::Packet(packet) = event {
                 if let Packet::Hello { version, caps } = *packet {
                     assert!(version.starts_with("test"));
                     assert!(caps.has(Cap::Ids64Bits));
@@ -1767,7 +1627,7 @@ mod tests {
 
         let mut got_hello = false;
         while let Some(event) = guest.poll() {
-            if let Ok(packet) = event {
+            if let Event::Packet(packet) = event {
                 if let Packet::Hello { .. } = *packet {
                     got_hello = true;
                 }
@@ -1803,7 +1663,7 @@ mod tests {
 
         let mut found = false;
         while let Some(event) = host.poll() {
-            if let Ok(packet) = event {
+            if let Event::Packet(packet) = event {
                 if let Packet::Request(ref req) = *packet {
                     if let RequestKind::SetConfiguration { configuration } = req.kind {
                         assert_eq!(req.id, 42);

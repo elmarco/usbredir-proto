@@ -75,4 +75,4 @@ pub use packet::{
     RequestPacket,
 };
 pub use parser::{Event, Guest, Host, Parser, ParserConfig, Role};
-pub use proto::{Endpoint, PktType, Speed, Status, TransferType};
+pub use proto::{Direction, Endpoint, PktType, Speed, Status, TransferType};
