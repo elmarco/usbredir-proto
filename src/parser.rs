@@ -400,6 +400,11 @@ impl<R: Role> Parser<R> {
         Ok(())
     }
 
+    /// Returns `true` if there are pending events to consume via [`poll()`](Self::poll).
+    pub fn has_events(&self) -> bool {
+        !self.events.is_empty()
+    }
+
     /// Pull the next decoded event, or `None` if the queue is empty.
     pub fn poll(&mut self) -> Option<Event> {
         self.events.pop_front()

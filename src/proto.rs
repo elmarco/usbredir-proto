@@ -156,45 +156,6 @@ impl From<PktType> for u32 {
     }
 }
 
-/// Backward-compatible module re-exporting packet type IDs as constants.
-#[doc(hidden)]
-pub mod pkt_type {
-    use super::PktType;
-
-    pub const HELLO: u32 = PktType::Hello as u32;
-    pub const DEVICE_CONNECT: u32 = PktType::DeviceConnect as u32;
-    pub const DEVICE_DISCONNECT: u32 = PktType::DeviceDisconnect as u32;
-    pub const RESET: u32 = PktType::Reset as u32;
-    pub const INTERFACE_INFO: u32 = PktType::InterfaceInfo as u32;
-    pub const EP_INFO: u32 = PktType::EpInfo as u32;
-    pub const SET_CONFIGURATION: u32 = PktType::SetConfiguration as u32;
-    pub const GET_CONFIGURATION: u32 = PktType::GetConfiguration as u32;
-    pub const CONFIGURATION_STATUS: u32 = PktType::ConfigurationStatus as u32;
-    pub const SET_ALT_SETTING: u32 = PktType::SetAltSetting as u32;
-    pub const GET_ALT_SETTING: u32 = PktType::GetAltSetting as u32;
-    pub const ALT_SETTING_STATUS: u32 = PktType::AltSettingStatus as u32;
-    pub const START_ISO_STREAM: u32 = PktType::StartIsoStream as u32;
-    pub const STOP_ISO_STREAM: u32 = PktType::StopIsoStream as u32;
-    pub const ISO_STREAM_STATUS: u32 = PktType::IsoStreamStatus as u32;
-    pub const START_INTERRUPT_RECEIVING: u32 = PktType::StartInterruptReceiving as u32;
-    pub const STOP_INTERRUPT_RECEIVING: u32 = PktType::StopInterruptReceiving as u32;
-    pub const INTERRUPT_RECEIVING_STATUS: u32 = PktType::InterruptReceivingStatus as u32;
-    pub const ALLOC_BULK_STREAMS: u32 = PktType::AllocBulkStreams as u32;
-    pub const FREE_BULK_STREAMS: u32 = PktType::FreeBulkStreams as u32;
-    pub const BULK_STREAMS_STATUS: u32 = PktType::BulkStreamsStatus as u32;
-    pub const CANCEL_DATA_PACKET: u32 = PktType::CancelDataPacket as u32;
-    pub const FILTER_REJECT: u32 = PktType::FilterReject as u32;
-    pub const FILTER_FILTER: u32 = PktType::FilterFilter as u32;
-    pub const DEVICE_DISCONNECT_ACK: u32 = PktType::DeviceDisconnectAck as u32;
-    pub const START_BULK_RECEIVING: u32 = PktType::StartBulkReceiving as u32;
-    pub const STOP_BULK_RECEIVING: u32 = PktType::StopBulkReceiving as u32;
-    pub const BULK_RECEIVING_STATUS: u32 = PktType::BulkReceivingStatus as u32;
-    pub const CONTROL_PACKET: u32 = PktType::ControlPacket as u32;
-    pub const BULK_PACKET: u32 = PktType::BulkPacket as u32;
-    pub const ISO_PACKET: u32 = PktType::IsoPacket as u32;
-    pub const INTERRUPT_PACKET: u32 = PktType::InterruptPacket as u32;
-    pub const BUFFERED_BULK_PACKET: u32 = PktType::BufferedBulkPacket as u32;
-}
 
 /// USB transfer completion status (maps to `libusb_transfer_status`).
 ///
@@ -318,13 +279,18 @@ impl TryFrom<u8> for TransferType {
 pub struct Endpoint(u8);
 
 impl Endpoint {
-    /// Create an endpoint from a raw USB endpoint address byte.
-    ///
-    /// Bits 4–6 are reserved per the USB spec and are masked off.
-    /// Only bit 7 (direction) and bits 0–3 (endpoint number) are kept.
+    /// Create an endpoint from a raw USB endpoint address byte, masking
+    /// reserved bits 4–6 per the USB spec. Only bit 7 (direction) and
+    /// bits 0–3 (endpoint number) are kept.
+    #[must_use]
+    pub const fn from_raw(raw: u8) -> Self {
+        Self(raw & 0x8F)
+    }
+
+    /// Alias for [`from_raw`](Self::from_raw).
     #[must_use]
     pub const fn new(raw: u8) -> Self {
-        Self(raw & 0x8F)
+        Self::from_raw(raw)
     }
 
     /// The raw endpoint address byte.
@@ -359,9 +325,10 @@ impl Endpoint {
 
 impl From<u8> for Endpoint {
     fn from(v: u8) -> Self {
-        Self::new(v)
+        Self::from_raw(v)
     }
 }
+
 
 impl From<Endpoint> for u8 {
     fn from(ep: Endpoint) -> Self {

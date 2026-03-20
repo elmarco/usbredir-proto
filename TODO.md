@@ -60,18 +60,14 @@
   match on just header sizes (~70 lines, down from ~220). `verify_packet()` also
   simplified with `R::IS_HOST ^ sending`.
 
-- [ ] **Remove or deprecate `poll_packet()`**
-  Silently discards all errors. The doc comment already warns about this, but its existence
-  encourages misuse. Consider `#[deprecated]` or removal in a 0.x version.
+- [x] **Remove or deprecate `poll_packet()`**
+  Done: added `#[deprecated(since = "0.2.0")]` with guidance to use `poll()` or `events()`.
 
-- [ ] **Fix misleading codec decode loop**
-  `codec.rs:59-65`: The loop looks like it processes multiple events but returns on the first
-  one. Replace with a direct `self.parser.poll()` call — Tokio's `Framed` will call `decode()`
-  again for subsequent packets.
+- [x] **Fix misleading codec decode loop**
+  Done: replaced loop with direct `match self.parser.poll()`.
 
-- [ ] **Replace `Borrow<Packet>` with `&Packet` on `send()`**
-  The `impl Borrow<Packet>` bound adds complexity without clear benefit. `Borrow` is
-  idiomatically for collections/lookup, not function arguments. Use `&Packet` directly.
+- [x] **Replace `Borrow<Packet>` with `&Packet` on `send()`**
+  Done: simplified to `&Packet`.
 
 - [x] **Make `Event` a proper enum instead of a type alias**
   Done: replaced `type Event = Result<Box<Packet>>` with
@@ -113,23 +109,22 @@
   Done: documented the rationale on `Packet` enum and noted the version-pinning
   workaround for callers who prefer exhaustive matching.
 
-- [ ] **Add `has_events()` method to `Parser`**
-  Symmetric with existing `has_data_to_write()`. Lets callers check if events are pending
-  without draining, useful after `feed()`.
+- [x] **Add `has_events()` method to `Parser`**
+  Done: added `has_events()` symmetric with `has_data_to_write()`.
 
-- [ ] **`Caps::set` hidden side-effect**
-  `set(Cap::BulkStreams)` silently also sets `Cap::EpInfoMaxPacketSize`. Documented but
-  surprising. Consider making this more explicit (e.g., a separate `with_bulk_streams()`
-  constructor, or returning `&mut Self` to make chaining visible).
+- [x] **`Caps::set` hidden side-effect** — WONTFIX
+  Already well-documented on both `set()` and `with()`. The auto-enable of
+  `EpInfoMaxPacketSize` when setting `BulkStreams` matches the C library behavior
+  and prevents invalid cap combinations. No change needed.
 
-- [ ] **`Endpoint::new()` silently masks reserved bits**
-  `Endpoint::new(0xFF)` becomes `0x8F`. Correct per USB spec but surprising. Consider
-  providing `TryFrom<u8>` that rejects reserved bits, or renaming to `from_raw()` to
-  signal masking.
+- [x] **`Endpoint::new()` silently masks reserved bits**
+  Done: added `Endpoint::from_raw()` that signals the masking behavior. `new()` kept
+  as alias for compatibility. `TryFrom<u8>` not added because `From<u8>` (needed for
+  wire decoding) conflicts with the blanket impl.
 
-- [ ] **Remove `#[doc(hidden)] pkt_type` constants module**
-  Duplicates the `PktType` enum. In a 0.x version, remove rather than carry dead weight.
+- [x] **Remove `#[doc(hidden)] pkt_type` constants module**
+  Done: removed the entire module. No internal or external users.
 
-- [ ] **Consider `num_enum` for `TryFrom` boilerplate**
-  `PktType`, `Status`, `TransferType`, `Speed` all have manual 30+ line `TryFrom` impls
-  that could be derived.
+- [x] **Consider `num_enum` for `TryFrom` boilerplate** — WONTFIX
+  The ~80 lines of manual impls work correctly and adding a proc-macro dependency
+  for cosmetic reduction isn't worth it for a `no_std` library.
