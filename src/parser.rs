@@ -91,14 +91,10 @@ impl ParserConfig {
 }
 
 /// An event produced by [`Parser::poll()`] or [`Parser::events()`].
-#[derive(Debug)]
-#[non_exhaustive]
-pub enum Event {
-    /// A successfully decoded packet.
-    Packet(Box<Packet>),
-    /// A parse error encountered while decoding input.
-    ParseError(Error),
-}
+///
+/// This is a `Result<Box<Packet>, Error>`: `Ok(packet)` for a successfully
+/// decoded packet, `Err(error)` for a parse error encountered during decoding.
+pub type Event = Result<Box<Packet>>;
 
 /// Parse state machine: tracks whether we're waiting for a packet header
 /// or already have a parsed header and are waiting for the body bytes.
@@ -477,8 +473,8 @@ impl Parser {
     pub fn poll_packet(&mut self) -> Option<Box<Packet>> {
         loop {
             match self.events.pop_front()? {
-                Event::Packet(p) => return Some(p),
-                Event::ParseError(_) => continue,
+                Ok(p) => return Some(p),
+                Err(_) => continue,
             }
         }
     }
@@ -527,7 +523,7 @@ impl Parser {
                         Err(e) => {
                             let _ = self.input.split_to(hlen);
                             self.to_skip = pkt_length as usize;
-                            self.events.push_back(Event::ParseError(e));
+                            self.events.push_back(Err(e));
                             continue;
                         }
                     };
@@ -537,7 +533,7 @@ impl Parser {
                         let _ = self.input.split_to(hlen);
                         self.to_skip = pkt_length as usize;
                         self.events
-                            .push_back(Event::ParseError(Error::PacketTooLarge {
+                            .push_back(Err(Error::PacketTooLarge {
                                 length: pkt_length,
                                 max: MAX_PACKET_SIZE,
                             }));
@@ -551,7 +547,7 @@ impl Parser {
                         let _ = self.input.split_to(hlen);
                         self.to_skip = pkt_length as usize;
                         self.events
-                            .push_back(Event::ParseError(Error::InvalidPacketLength {
+                            .push_back(Err(Error::InvalidPacketLength {
                                 packet_type: pkt_type,
                                 length: pkt_length,
                             }));
@@ -613,10 +609,10 @@ impl Parser {
                                     }
                                 }
                             }
-                            self.events.push_back(Event::Packet(Box::new(packet)));
+                            self.events.push_back(Ok(Box::new(packet)));
                         }
                         Err(e) => {
-                            self.events.push_back(Event::ParseError(e));
+                            self.events.push_back(Err(e));
                         }
                     }
 
@@ -1669,7 +1665,7 @@ mod tests {
         // Guest should emit a Log (peer info) + the hello Packet
         let mut got_hello = false;
         while let Some(event) = guest.poll() {
-            if let Event::Packet(packet) = event {
+            if let Ok(packet) = event {
                 if let Packet::Hello { version, caps } = *packet {
                     assert!(version.starts_with("test"));
                     assert!(caps.has(Cap::Ids64Bits));
@@ -1694,7 +1690,7 @@ mod tests {
 
         let mut got_hello = false;
         while let Some(event) = guest.poll() {
-            if let Event::Packet(packet) = event {
+            if let Ok(packet) = event {
                 if let Packet::Hello { .. } = *packet {
                     got_hello = true;
                 }
@@ -1730,7 +1726,7 @@ mod tests {
 
         let mut found = false;
         while let Some(event) = host.poll() {
-            if let Event::Packet(packet) = event {
+            if let Ok(packet) = event {
                 if let Packet::Request(ref req) = *packet {
                     if let RequestKind::SetConfiguration { configuration } = req.kind {
                         assert_eq!(req.id, 42);

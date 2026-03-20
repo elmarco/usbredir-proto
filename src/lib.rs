@@ -29,7 +29,7 @@
 //! The [`Parser`] follows a [sans-IO] pattern — no sockets, no callbacks:
 //!
 //! - [`Parser::feed()`] — push received bytes into the parser
-//! - [`Parser::poll()`] / [`Parser::events()`] — pull decoded [`Event`]s (packets or errors)
+//! - [`Parser::poll()`] / [`Parser::events()`] — pull decoded packets (as `Result<Box<Packet>, Error>`)
 //! - [`Parser::send()`] — enqueue a [`Packet`] for transmission
 //! - [`Parser::drain()`] / [`Parser::drain_output()`] — pull encoded bytes to send
 //!

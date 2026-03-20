@@ -423,7 +423,7 @@ fn rust_drain_all(r: &mut Parser) -> Vec<u8> {
 fn rust_drain_packets(r: &mut Parser) -> Vec<Packet> {
     let mut pkts = Vec::new();
     while let Some(ev) = r.poll() {
-        if let Event::Packet(p) = ev {
+        if let Ok(p) = ev {
             pkts.push(*p);
         }
     }
@@ -2651,8 +2651,8 @@ fn interop_error_recovery_unknown_type() {
         let mut got_packet = false;
         while let Some(ev) = rp.poll() {
             match ev {
-                Event::ParseError(_) => got_error = true,
-                Event::Packet(p) if matches!(*p, Packet::DeviceConnect { .. }) => got_packet = true,
+                Err(_) => got_error = true,
+                Ok(p) if matches!(*p, Packet::DeviceConnect { .. }) => got_packet = true,
                 _ => {}
             }
         }

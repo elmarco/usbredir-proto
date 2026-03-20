@@ -52,9 +52,8 @@ fn roundtrip(sender: &mut Parser, receiver: &mut Parser, packet: Packet) -> Pack
     receiver.feed(&wire);
     loop {
         match receiver.poll().unwrap() {
-            Event::Packet(p) => return *p,
-            Event::ParseError(_) => continue,
-            _ => continue,
+            Ok(p) => return *p,
+            Err(_) => continue,
         }
     }
 }

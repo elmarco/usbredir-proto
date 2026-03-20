@@ -19,7 +19,7 @@ use tokio_util::codec::{Decoder, Encoder};
 
 use crate::error::{Error, Result};
 use crate::packet::Packet;
-use crate::parser::{Event, Parser, ParserConfig};
+use crate::parser::{Parser, ParserConfig};
 
 /// A [`tokio_util::codec`] implementation wrapping [`Parser`].
 ///
@@ -58,9 +58,8 @@ impl Decoder for UsbredirCodec {
         }
         loop {
             match self.parser.poll() {
-                Some(Event::Packet(p)) => return Ok(Some(*p)),
-                Some(Event::ParseError(e)) => return Err(e),
-                Some(_) => continue,
+                Some(Ok(p)) => return Ok(Some(*p)),
+                Some(Err(e)) => return Err(e),
                 None => return Ok(None),
             }
         }
