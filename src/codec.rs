@@ -71,7 +71,7 @@ impl Encoder<Packet> for UsbredirCodec {
     type Error = Error;
 
     fn encode(&mut self, item: Packet, dst: &mut BytesMut) -> Result<()> {
-        self.parser.send(item)?;
+        self.parser.send(&item)?;
         while let Some(chunk) = self.parser.drain() {
             dst.extend_from_slice(&chunk);
         }

@@ -182,7 +182,7 @@ impl Parser {
                 caps: our_caps,
             };
             parser
-                .send(hello)
+                .send(&hello)
                 .expect("Hello send cannot fail before negotiation");
         }
 
@@ -1183,10 +1183,10 @@ impl Parser {
     // Sans-IO output
     /// Encode and enqueue a packet for output. The wire bytes become available
     /// via [`drain()`](Self::drain) or [`drain_output()`](Self::drain_output).
-    pub fn send(&mut self, packet: Packet) -> Result<()> {
+    pub fn send(&mut self, packet: &Packet) -> Result<()> {
         // Hello must be sendable before negotiation; all other packets require
         // peer caps so that capability-dependent wire formats are correct.
-        if !matches!(packet, Packet::Hello { .. }) && self.peer_caps.is_none() {
+        if !matches!(*packet, Packet::Hello { .. }) && self.peer_caps.is_none() {
             return Err(Error::NoPeerCaps);
         }
 
@@ -1194,7 +1194,7 @@ impl Parser {
         let id = packet.id().unwrap_or(0);
         let type_header_len = self.get_type_header_len(pkt_type, true)?;
 
-        self.verify_packet(&packet, true)?;
+        self.verify_packet(packet, true)?;
 
         let header_len = self.header_len();
         let mut buf = BytesMut::with_capacity(header_len + type_header_len + 64);
@@ -1203,7 +1203,7 @@ impl Parser {
         let header_start = buf.len();
         buf.extend_from_slice(&[0u8; 16][..header_len]);
 
-        self.encode_packet_into(&packet, &mut buf)?;
+        self.encode_packet_into(packet, &mut buf)?;
 
         // Patch the header now that we know the body length
         let pkt_body_len = (buf.len() - header_start - header_len) as u32;
@@ -1722,7 +1722,7 @@ mod tests {
         // Now guest sends set_configuration (guest is NOT host, so SetConfiguration
         // is command_for_host=true when sending from guest)
         guest
-            .send(Packet::set_configuration(42, 1))
+            .send(&Packet::set_configuration(42, 1))
             .unwrap();
 
         let pkt_bytes = guest.drain().unwrap();

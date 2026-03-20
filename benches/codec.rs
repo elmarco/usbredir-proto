@@ -55,7 +55,7 @@ fn bench_encode_bulk(c: &mut Criterion) {
     c.bench_function("encode_bulk_1k", |b| {
         b.iter(|| {
             guest
-                .send(Packet::bulk_packet(
+                .send(&Packet::bulk_packet(
                     1,
                     Endpoint::new(0x02),
                     Status::Success,
@@ -75,7 +75,7 @@ fn bench_decode_bulk(c: &mut Criterion) {
 
     // Encode a bulk packet to get its wire bytes
     guest
-        .send(Packet::bulk_packet(
+        .send(&Packet::bulk_packet(
             1,
             Endpoint::new(0x02),
             Status::Success,
@@ -100,7 +100,7 @@ fn bench_encode_control(c: &mut Criterion) {
     c.bench_function("encode_control_no_data", |b| {
         b.iter(|| {
             guest
-                .send(Packet::control_packet(
+                .send(&Packet::control_packet(
                     1,
                     Endpoint::new(0x00),
                     0x09,

@@ -47,7 +47,7 @@ fn drain_all(p: &mut Parser) -> Vec<u8> {
 }
 
 fn roundtrip(sender: &mut Parser, receiver: &mut Parser, packet: Packet) -> Packet {
-    sender.send(packet).unwrap();
+    sender.send(&packet).unwrap();
     let wire = drain_all(sender);
     receiver.feed(&wire);
     loop {

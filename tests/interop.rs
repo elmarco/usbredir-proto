@@ -485,7 +485,7 @@ unsafe fn c_to_rust(
 unsafe fn rust_to_c(c_is_host: bool, packet: Packet, name: &str) {
     let (cp, mut rp) = connected_pair(c_is_host);
 
-    rp.send(packet)
+    rp.send(&packet)
         .unwrap_or_else(|_| panic!("{name}: Rust send failed"));
     let wire = rust_drain_all(&mut rp);
     assert!(!wire.is_empty(), "{name}: Rust produced no bytes");
@@ -515,7 +515,7 @@ unsafe fn byte_compare(
 
     // --- Rust side (Rust needs the same role as C, so flip c_is_host) ---
     let (cp_r, mut rp_r) = connected_pair(!c_is_host);
-    rp_r.send(packet)
+    rp_r.send(&packet)
         .unwrap_or_else(|_| panic!("{name}: Rust send failed"));
     let rust_wire = rust_drain_all(&mut rp_r);
     sys::usbredirparser_destroy(cp_r);
@@ -1810,7 +1810,7 @@ fn interop_compat_32bit_ids() {
 
         // Reverse: Rust encodes with 32-bit ids too
         let (cp2, mut rp2) = connected_pair_minimal(false);
-        rp2.send(Packet::DeviceConnect {
+        rp2.send(&Packet::DeviceConnect {
             speed: Speed::High,
             device_class: 0x08,
             device_subclass: 0x06,
@@ -1892,7 +1892,7 @@ fn interop_compat_no_device_version() {
 
         // Reverse direction
         let (cp2, mut rp2) = connected_pair_with_caps(false, &mut c_caps, r_caps);
-        rp2.send(Packet::DeviceConnect {
+        rp2.send(&Packet::DeviceConnect {
             speed: Speed::Full,
             device_class: 0xFF,
             device_subclass: 0x00,
@@ -1952,7 +1952,7 @@ fn interop_compat_no_ep_info_max_pktsz() {
 
         // Reverse
         let (cp2, mut rp2) = connected_pair_with_caps(false, &mut c_caps, r_caps);
-        rp2.send(Packet::EpInfo {
+        rp2.send(&Packet::EpInfo {
             ep_type: {
                 let mut t = [TransferType::Control; 32];
                 t[0] = TransferType::Bulk;
@@ -2070,7 +2070,7 @@ fn interop_compat_16bit_bulk_length() {
 
         // Reverse: Rust encodes with 16-bit bulk length
         let (cp2, mut rp2) = connected_pair_with_caps(true, &mut c_caps, r_caps);
-        rp2.send(Packet::bulk_packet(
+        rp2.send(&Packet::bulk_packet(
             100,
             Endpoint::new(0x02),
             Status::Success,
@@ -2214,7 +2214,7 @@ fn verify_interface_count_too_large() {
     rp.feed(&peer_hello_bytes);
     rust_drain_packets(&mut rp);
 
-    let result = rp.send(Packet::InterfaceInfo {
+    let result = rp.send(&Packet::InterfaceInfo {
         interface_count: 33,
         interface: [0u8; 32],
         interface_class: [0u8; 32],
@@ -2234,13 +2234,13 @@ fn verify_interrupt_receiving_non_input_ep() {
     rust_drain_packets(&mut rp);
 
     // Endpoint 0x02 = OUT, should be rejected (interrupt receiving requires IN endpoint)
-    let result = rp.send(Packet::start_interrupt_receiving(1, Endpoint::new(0x02)));
+    let result = rp.send(&Packet::start_interrupt_receiving(1, Endpoint::new(0x02)));
     assert!(
         result.is_err(),
         "Should reject non-input endpoint for start_interrupt_receiving"
     );
 
-    let result = rp.send(Packet::stop_interrupt_receiving(2, Endpoint::new(0x02)));
+    let result = rp.send(&Packet::stop_interrupt_receiving(2, Endpoint::new(0x02)));
     assert!(
         result.is_err(),
         "Should reject non-input endpoint for stop_interrupt_receiving"
@@ -2255,7 +2255,7 @@ fn verify_bulk_receiving_non_input_ep() {
     rp.feed(&peer_hello);
     rust_drain_packets(&mut rp);
 
-    let result = rp.send(Packet::start_bulk_receiving(1, 0, 4096, Endpoint::new(0x02), 4));
+    let result = rp.send(&Packet::start_bulk_receiving(1, 0, 4096, Endpoint::new(0x02), 4));
     assert!(
         result.is_err(),
         "Should reject non-input endpoint for start_bulk_receiving"
@@ -2270,7 +2270,7 @@ fn verify_bulk_transfer_too_large() {
     rp.feed(&peer_hello);
     rust_drain_packets(&mut rp);
 
-    let result = rp.send(Packet::start_bulk_receiving(1, 0, 256 * 1024 * 1024, Endpoint::new(0x82), 4));
+    let result = rp.send(&Packet::start_bulk_receiving(1, 0, 256 * 1024 * 1024, Endpoint::new(0x82), 4));
     assert!(result.is_err(), "Should reject oversized bulk transfer");
 }
 
@@ -2298,7 +2298,7 @@ fn verify_filter_without_cap() {
     rp.feed(&peer_hello);
     rust_drain_packets(&mut rp);
 
-    let result = rp.send(Packet::FilterReject);
+    let result = rp.send(&Packet::FilterReject);
     assert!(
         result.is_err(),
         "Should reject filter_reject without filter cap"
@@ -2318,7 +2318,7 @@ fn verify_data_packet_wrong_direction() {
     // When guest sends, command_for_host = true
     // ep 0x81 = IN, !command_for_host = false → no data expected
     // ISO with no data in wrong direction → rejected
-    let result = rp.send(Packet::iso_packet(
+    let result = rp.send(&Packet::iso_packet(
         1,
         Endpoint::new(0x81),
         Status::Success,
@@ -2779,7 +2779,7 @@ fn interop_serialize_with_queued_output_rust_to_c() {
         let (cp, mut rp) = connected_pair(false);
 
         // Rust (host) queues a device_connect
-        rp.send(Packet::DeviceConnect {
+        rp.send(&Packet::DeviceConnect {
             speed: Speed::High,
             device_class: 0x08,
             device_subclass: 0x06,
