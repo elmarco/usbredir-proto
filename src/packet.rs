@@ -422,6 +422,13 @@ pub struct DeviceConnectInfo {
 ///
 /// The `id` is a correlation identifier chosen by the requester so that
 /// responses can be matched to requests.
+///
+/// # `#[non_exhaustive]`
+///
+/// `Packet`, [`DataKind`], and [`RequestKind`] are marked `#[non_exhaustive]`
+/// so that new USB redirection packet types can be added in future versions
+/// without breaking downstream `match` arms. This means matches in external
+/// crates must always include a wildcard (`_ =>`) arm.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Packet {

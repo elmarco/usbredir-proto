@@ -66,6 +66,6 @@
   Done: expanded doc comment to list the error types being discarded and recommend
   `poll()` / `events()` for production code.
 
-- [ ] **`#[non_exhaustive]` trade-off**
-  `Packet`/`DataKind`/`RequestKind` are `#[non_exhaustive]`, preventing exhaustive
-  matching. Good for forward compat but forces `_ =>` arms. Document the trade-off.
+- [x] **`#[non_exhaustive]` trade-off**
+  Done: documented the rationale on `Packet` enum and noted the version-pinning
+  workaround for callers who prefer exhaustive matching.
