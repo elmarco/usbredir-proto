@@ -45,15 +45,25 @@ impl Caps {
     }
 
     /// Enable a capability, returning `self` for chaining.
+    ///
+    /// Setting [`Cap::BulkStreams`] automatically enables
+    /// [`Cap::EpInfoMaxPacketSize`], which is a prerequisite.
     #[must_use]
     pub fn with(mut self, cap: Cap) -> Self {
         self.set(cap);
         self
     }
 
+    /// Enable a capability.
+    ///
+    /// Setting [`Cap::BulkStreams`] automatically enables
+    /// [`Cap::EpInfoMaxPacketSize`], which is a prerequisite.
     pub fn set(&mut self, cap: Cap) {
         let idx = cap as u32;
         self.bits[(idx / 32) as usize] |= 1 << (idx % 32);
+        if matches!(cap, Cap::BulkStreams) {
+            self.set(Cap::EpInfoMaxPacketSize);
+        }
     }
 
     #[must_use]
@@ -103,12 +113,19 @@ impl Caps {
         Self { bits }
     }
 
-    /// Verify caps consistency (bulk_streams requires ep_info_max_packet_size)
-    pub fn verify(&mut self) {
+    /// Return a copy with inconsistent caps fixed.
+    ///
+    /// Currently strips [`Cap::BulkStreams`] when
+    /// [`Cap::EpInfoMaxPacketSize`] is absent (the former requires the latter).
+    /// This is mainly useful when receiving peer caps from the wire, where the
+    /// invariant enforced by [`set()`](Self::set) may not hold.
+    #[must_use]
+    pub fn verified(mut self) -> Self {
         if self.has(Cap::BulkStreams) && !self.has(Cap::EpInfoMaxPacketSize) {
             let idx = Cap::BulkStreams as u32;
             self.bits[(idx / 32) as usize] &= !(1 << (idx % 32));
         }
+        self
     }
 
     /// Check if a subset of `other` caps (i.e., `self` has no caps that `other` doesn't)
@@ -157,10 +174,18 @@ mod tests {
     }
 
     #[test]
-    fn verify_strips_bulk_streams() {
-        let mut caps = Caps::new();
-        caps.set(Cap::BulkStreams);
-        caps.verify();
+    fn set_bulk_streams_auto_sets_ep_info_max_packet_size() {
+        let caps = Caps::new().with(Cap::BulkStreams);
+        assert!(caps.has(Cap::EpInfoMaxPacketSize));
+    }
+
+    #[test]
+    fn verified_strips_bulk_streams_without_ep_info() {
+        // Simulate receiving inconsistent caps from the wire
+        let caps = Caps::from_raw_bits([1 << Cap::BulkStreams as u32]);
+        assert!(caps.has(Cap::BulkStreams));
+        assert!(!caps.has(Cap::EpInfoMaxPacketSize));
+        let caps = caps.verified();
         assert!(!caps.has(Cap::BulkStreams));
     }
 }

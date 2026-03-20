@@ -161,7 +161,7 @@ impl Parser {
         if !config.is_host {
             our_caps.set(Cap::DeviceDisconnectAck);
         }
-        our_caps.verify();
+        our_caps = our_caps.verified();
 
         let mut parser = Self {
             config: config.clone(),
@@ -597,8 +597,7 @@ impl Parser {
                                     #[cfg(feature = "tracing")]
                                     tracing::error!("Received second hello message, ignoring");
                                 } else {
-                                    let mut peer_caps = *caps;
-                                    peer_caps.verify();
+                                    let peer_caps = caps.verified();
                                     self.peer_caps = Some(peer_caps);
                                     #[cfg(feature = "tracing")]
                                     {
