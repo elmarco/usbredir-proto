@@ -91,7 +91,6 @@ pub fn parse_rules(
             device_version_bcd: int_to_opt_u16(device_version_bcd)?,
             allow: allow_val.is_some_and(|v| v != 0),
         };
-        verify_single_rule(&rule)?;
         rules.push(rule);
     }
 
@@ -137,17 +136,12 @@ fn int_to_opt_u16(val: Option<i64>) -> Result<Option<u16>, FilterError> {
     }
 }
 
-fn verify_single_rule(_rule: &FilterRule) -> Result<(), FilterError> {
-    // device_class must be None or 0..=255 (already ensured by Option<u8>)
-    // vendor_id, product_id, device_version_bcd must be None or 0..=65535 (already ensured)
-    Ok(())
-}
-
 /// Verify that all rules have valid field ranges.
-pub fn verify_rules(rules: &[FilterRule]) -> Result<(), FilterError> {
-    for rule in rules {
-        verify_single_rule(rule)?;
-    }
+///
+/// Currently a no-op: all field ranges are enforced by the type system
+/// (`Option<u8>` for class, `Option<u16>` for vendor/product/bcd). Retained
+/// as a public API entry point for future protocol extensions.
+pub fn verify_rules(_rules: &[FilterRule]) -> Result<(), FilterError> {
     Ok(())
 }
 
