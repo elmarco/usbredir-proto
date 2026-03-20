@@ -386,6 +386,26 @@ impl core::fmt::Display for RequestPacket {
     }
 }
 
+/// Information about a connected USB device, sent in a [`DeviceConnect`](Packet::DeviceConnect) packet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeviceConnectInfo {
+    /// USB device speed class.
+    pub speed: Speed,
+    /// USB device class code ([class codes](https://www.usb.org/defined-class-codes)).
+    pub device_class: u8,
+    /// USB device subclass code.
+    pub device_subclass: u8,
+    /// USB device protocol code.
+    pub device_protocol: u8,
+    /// USB vendor ID (idVendor).
+    pub vendor_id: u16,
+    /// USB product ID (idProduct).
+    pub product_id: u16,
+    /// BCD-encoded device release number (bcdDevice).
+    /// Requires [`Cap::ConnectDeviceVersion`](crate::Cap::ConnectDeviceVersion).
+    pub device_version_bcd: u16,
+}
+
 /// A decoded usbredir protocol packet.
 ///
 /// The protocol uses a request/response model between a **host** (physical USB
@@ -411,21 +431,7 @@ pub enum Packet {
     /// [`Parser::new()`](crate::Parser::new) unless `no_hello` is set.
     Hello { version: String, caps: Caps },
     /// Host → guest: a USB device has been connected.
-    ///
-    /// `device_class` / `device_subclass` / `device_protocol` are the USB
-    /// [class codes](https://www.usb.org/defined-class-codes).
-    /// `vendor_id` and `product_id` identify the device manufacturer/product.
-    /// `device_version_bcd` is the BCD-encoded device release number (requires
-    /// [`Cap::ConnectDeviceVersion`](crate::Cap::ConnectDeviceVersion)).
-    DeviceConnect {
-        speed: Speed,
-        device_class: u8,
-        device_subclass: u8,
-        device_protocol: u8,
-        vendor_id: u16,
-        product_id: u16,
-        device_version_bcd: u16,
-    },
+    DeviceConnect(DeviceConnectInfo),
     /// Host → guest: the USB device has been disconnected.
     DeviceDisconnect,
     /// Host → guest: describes the device's USB interfaces (up to 32).
@@ -474,15 +480,11 @@ impl core::fmt::Display for Packet {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Packet::Hello { version, .. } => write!(f, "Hello(version={version:?})"),
-            Packet::DeviceConnect {
-                speed,
-                vendor_id,
-                product_id,
-                ..
-            } => {
+            Packet::DeviceConnect(info) => {
                 write!(
                     f,
-                    "DeviceConnect(speed={speed:?}, vid={vendor_id:#06x}, pid={product_id:#06x})"
+                    "DeviceConnect(speed={:?}, vid={:#06x}, pid={:#06x})",
+                    info.speed, info.vendor_id, info.product_id
                 )
             }
             Packet::DeviceDisconnect => write!(f, "DeviceDisconnect"),
@@ -507,7 +509,7 @@ impl Packet {
     pub fn packet_type(&self) -> PktType {
         match self {
             Packet::Hello { .. } => PktType::Hello,
-            Packet::DeviceConnect { .. } => PktType::DeviceConnect,
+            Packet::DeviceConnect(_) => PktType::DeviceConnect,
             Packet::DeviceDisconnect => PktType::DeviceDisconnect,
             Packet::InterfaceInfo { .. } => PktType::InterfaceInfo,
             Packet::EpInfo { .. } => PktType::EpInfo,
@@ -527,7 +529,7 @@ impl Packet {
     pub fn id(&self) -> Option<u64> {
         match self {
             Packet::Hello { .. }
-            | Packet::DeviceConnect { .. }
+            | Packet::DeviceConnect(_)
             | Packet::DeviceDisconnect
             | Packet::InterfaceInfo { .. }
             | Packet::EpInfo { .. }
@@ -599,24 +601,8 @@ impl Packet {
 
     /// Create a DeviceConnect packet.
     #[must_use]
-    pub fn device_connect(
-        speed: Speed,
-        device_class: u8,
-        device_subclass: u8,
-        device_protocol: u8,
-        vendor_id: u16,
-        product_id: u16,
-        device_version_bcd: u16,
-    ) -> Self {
-        Self::DeviceConnect {
-            speed,
-            device_class,
-            device_subclass,
-            device_protocol,
-            vendor_id,
-            product_id,
-            device_version_bcd,
-        }
+    pub fn device_connect(info: DeviceConnectInfo) -> Self {
+        Self::DeviceConnect(info)
     }
 
     /// Create an InterfaceInfo packet.

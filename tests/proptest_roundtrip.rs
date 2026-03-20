@@ -108,7 +108,15 @@ fn arb_host_sends() -> impl Strategy<Value = Packet> {
             any::<u16>()
         )
             .prop_map(|(speed, dc, ds, dp, vid, pid, bcd)| {
-                Packet::device_connect(speed, dc, ds, dp, vid, pid, bcd)
+                Packet::DeviceConnect(DeviceConnectInfo {
+                    speed,
+                    device_class: dc,
+                    device_subclass: ds,
+                    device_protocol: dp,
+                    vendor_id: vid,
+                    product_id: pid,
+                    device_version_bcd: bcd,
+                })
             }),
         Just(Packet::DeviceDisconnect),
         // Status responses

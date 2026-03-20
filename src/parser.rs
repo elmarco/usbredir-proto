@@ -904,7 +904,7 @@ impl<R: Role> Parser<R> {
                 if self.negotiated(Cap::ConnectDeviceVersion) {
                     let hdr = wire::DeviceConnectHeader::read_from_bytes(type_header)
                         .map_err(wire_err!())?;
-                    Ok(Packet::DeviceConnect {
+                    Ok(Packet::DeviceConnect(crate::packet::DeviceConnectInfo {
                         speed: Speed::try_from(hdr.speed).map_err(Error::InvalidEnumValue)?,
                         device_class: hdr.device_class,
                         device_subclass: hdr.device_subclass,
@@ -912,11 +912,11 @@ impl<R: Role> Parser<R> {
                         vendor_id: hdr.vendor_id.get(),
                         product_id: hdr.product_id.get(),
                         device_version_bcd: hdr.device_version_bcd.get(),
-                    })
+                    }))
                 } else {
                     let hdr = wire::DeviceConnectHeaderNoVersion::read_from_bytes(type_header)
                         .map_err(wire_err!())?;
-                    Ok(Packet::DeviceConnect {
+                    Ok(Packet::DeviceConnect(crate::packet::DeviceConnectInfo {
                         speed: Speed::try_from(hdr.speed).map_err(Error::InvalidEnumValue)?,
                         device_class: hdr.device_class,
                         device_subclass: hdr.device_subclass,
@@ -924,7 +924,7 @@ impl<R: Role> Parser<R> {
                         vendor_id: hdr.vendor_id.get(),
                         product_id: hdr.product_id.get(),
                         device_version_bcd: 0,
-                    })
+                    }))
                 }
             }
             PktType::DeviceDisconnect => Ok(Packet::DeviceDisconnect),
@@ -1300,33 +1300,25 @@ impl<R: Role> Parser<R> {
                 write_hdr!(hdr);
                 buf.extend_from_slice(&caps.to_le_bytes());
             }
-            Packet::DeviceConnect {
-                speed,
-                device_class,
-                device_subclass,
-                device_protocol,
-                vendor_id,
-                product_id,
-                device_version_bcd,
-            } => {
+            Packet::DeviceConnect(info) => {
                 if self.negotiated(Cap::ConnectDeviceVersion) {
                     write_hdr!(wire::DeviceConnectHeader {
-                        speed: *speed as u8,
-                        device_class: *device_class,
-                        device_subclass: *device_subclass,
-                        device_protocol: *device_protocol,
-                        vendor_id: (*vendor_id).into(),
-                        product_id: (*product_id).into(),
-                        device_version_bcd: (*device_version_bcd).into(),
+                        speed: info.speed as u8,
+                        device_class: info.device_class,
+                        device_subclass: info.device_subclass,
+                        device_protocol: info.device_protocol,
+                        vendor_id: info.vendor_id.into(),
+                        product_id: info.product_id.into(),
+                        device_version_bcd: info.device_version_bcd.into(),
                     });
                 } else {
                     write_hdr!(wire::DeviceConnectHeaderNoVersion {
-                        speed: *speed as u8,
-                        device_class: *device_class,
-                        device_subclass: *device_subclass,
-                        device_protocol: *device_protocol,
-                        vendor_id: (*vendor_id).into(),
-                        product_id: (*product_id).into(),
+                        speed: info.speed as u8,
+                        device_class: info.device_class,
+                        device_subclass: info.device_subclass,
+                        device_protocol: info.device_protocol,
+                        vendor_id: info.vendor_id.into(),
+                        product_id: info.product_id.into(),
                     });
                 }
             }

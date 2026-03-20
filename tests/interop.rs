@@ -540,7 +540,7 @@ unsafe fn byte_compare<R: Role>(
 #[test]
 fn interop_device_connect() {
     unsafe {
-        let pkt = Packet::DeviceConnect {
+        let pkt = Packet::DeviceConnect(DeviceConnectInfo {
             speed: Speed::High,
             device_class: 0x08,
             device_subclass: 0x06,
@@ -548,7 +548,7 @@ fn interop_device_connect() {
             vendor_id: 0x1234,
             product_id: 0x5678,
             device_version_bcd: 0x0100,
-        };
+        });
 
         unsafe fn c_encode(cp: *mut sys::usbredirparser) {
             let mut h = sys::usb_redir_device_connect_header {
@@ -569,11 +569,11 @@ fn interop_device_connect() {
             |p| {
                 matches!(
                     p,
-                    Packet::DeviceConnect {
+                    Packet::DeviceConnect(DeviceConnectInfo {
                         speed: Speed::High,
                         device_class: 0x08,
                         ..
-                    }
+                    })
                 )
             },
             "device_connect",
@@ -1729,17 +1729,17 @@ fn interop_compat_32bit_ids() {
         assert!(
             pkts.iter().any(|p| matches!(
                 p,
-                Packet::DeviceConnect {
+                Packet::DeviceConnect(DeviceConnectInfo {
                     speed: Speed::High,
                     ..
-                }
+                })
             )),
             "Rust failed to decode 32-bit id device_connect"
         );
 
         // Reverse: Rust encodes with 32-bit ids too
         let (cp2, mut rp2) = connected_pair_minimal::<Host>();
-        rp2.send(&Packet::DeviceConnect {
+        rp2.send(&Packet::DeviceConnect(DeviceConnectInfo {
             speed: Speed::High,
             device_class: 0x08,
             device_subclass: 0x06,
@@ -1747,7 +1747,7 @@ fn interop_compat_32bit_ids() {
             vendor_id: 0x1234,
             product_id: 0x5678,
             device_version_bcd: 0x0100,
-        })
+        }))
         .unwrap();
         let rust_wire = rust_drain_all(&mut rp2);
         assert_eq!(
@@ -1810,18 +1810,18 @@ fn interop_compat_no_device_version() {
         assert!(
             pkts.iter().any(|p| matches!(
                 p,
-                Packet::DeviceConnect {
+                Packet::DeviceConnect(DeviceConnectInfo {
                     speed: Speed::Full,
                     device_class: 0xFF,
                     ..
-                }
+                })
             )),
             "Rust failed to decode no-version device_connect"
         );
 
         // Reverse direction
         let (cp2, mut rp2) = connected_pair_with_caps::<Host>(&mut c_caps, r_caps);
-        rp2.send(&Packet::DeviceConnect {
+        rp2.send(&Packet::DeviceConnect(DeviceConnectInfo {
             speed: Speed::Full,
             device_class: 0xFF,
             device_subclass: 0x00,
@@ -1829,7 +1829,7 @@ fn interop_compat_no_device_version() {
             vendor_id: 0xABCD,
             product_id: 0x1234,
             device_version_bcd: 0, // ignored without cap
-        })
+        }))
         .unwrap();
         let rust_wire = rust_drain_all(&mut rp2);
         assert_eq!(
@@ -2577,7 +2577,7 @@ fn interop_error_recovery_unknown_type() {
         while let Some(ev) = rp.poll() {
             match ev {
                 Err(_) => got_error = true,
-                Ok(p) if matches!(*p, Packet::DeviceConnect { .. }) => got_packet = true,
+                Ok(p) if matches!(*p, Packet::DeviceConnect(DeviceConnectInfo { .. })) => got_packet = true,
                 _ => {}
             }
         }
@@ -2688,7 +2688,7 @@ fn interop_serialize_with_queued_output() {
         let pkts = rust_drain_packets(&mut rp);
         assert!(
             pkts.iter()
-                .any(|p| matches!(p, Packet::DeviceConnect { .. })),
+                .any(|p| matches!(p, Packet::DeviceConnect(DeviceConnectInfo { .. }))),
             "Queued output from unserialized parser should decode correctly"
         );
 
@@ -2704,7 +2704,7 @@ fn interop_serialize_with_queued_output_rust_to_c() {
         let (cp, mut rp) = connected_pair::<Host>();
 
         // Rust (host) queues a device_connect
-        rp.send(&Packet::DeviceConnect {
+        rp.send(&Packet::DeviceConnect(DeviceConnectInfo {
             speed: Speed::High,
             device_class: 0x08,
             device_subclass: 0x06,
@@ -2712,7 +2712,7 @@ fn interop_serialize_with_queued_output_rust_to_c() {
             vendor_id: 0x1234,
             product_id: 0x5678,
             device_version_bcd: 0x0100,
-        })
+        }))
         .unwrap();
 
         // Serialize Rust with queued output

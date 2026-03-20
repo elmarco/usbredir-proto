@@ -25,10 +25,11 @@
   The PktType enum refactor (item 2) already gives exhaustive matching, which catches
   missing arms at compile time when a new variant is added.
 
-- [ ] **Wrap multi-field variants in dedicated structs**
-  `Packet::DeviceConnect` (7 fields), `InterfaceInfo`, `EpInfo` should be wrapped in
-  dedicated structs (e.g. `DeviceDescriptor`). Same for `control_packet()` which takes
-  9 positional arguments (already has `#[allow(clippy::too_many_arguments)]`).
+- [x] **Wrap multi-field variants in dedicated structs**
+  Done: `Packet::DeviceConnect` now holds `DeviceConnectInfo` struct (7 scalar fields).
+  `InterfaceInfo` and `EpInfo` left as-is — their array fields don't benefit from wrapping.
+  `control_packet()` constructor left as-is — users can construct `Packet::Data(DataPacket { .. })`
+  directly for full control.
 
 - [ ] **Handle duplicate Hello consistently**
   When a duplicate Hello arrives (`parser.rs:641`), it's logged but still pushed as an

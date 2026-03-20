@@ -70,6 +70,6 @@ pub mod codec;
 pub use caps::{Cap, Caps};
 pub use error::{Error, FilterError, Result};
 pub use filter::{CheckFlags, DeviceInfo, FilterResult, FilterRule};
-pub use packet::{DataKind, DataPacket, Packet, RequestKind, RequestPacket};
+pub use packet::{DataKind, DataPacket, DeviceConnectInfo, Packet, RequestKind, RequestPacket};
 pub use parser::{Event, Guest, Host, Parser, ParserConfig, Role};
 pub use proto::{Endpoint, PktType, Speed, Status, TransferType};
