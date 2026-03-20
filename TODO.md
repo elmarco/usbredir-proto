@@ -17,11 +17,13 @@
 
 ## Medium priority
 
-- [ ] **Centralize packet metadata (direction, header size, etc.)**
-  `get_type_header_len`, `decode_packet`, `encode_packet_into`, and `expects_extra_data`
-  each have massive match blocks that mirror each other. Any new packet type requires
-  updating 3-4 places. Consider a trait, lookup table, or `PktType::metadata() -> PacketMeta`
-  to centralize direction, type header size, expects-data, and decode/encode functions.
+- [x] **Centralize packet metadata (direction, header size, etc.)** — WONTFIX
+  Assessed and rejected: header sizes depend on negotiated capabilities at runtime
+  (e.g. DeviceConnect size depends on Cap::ConnectDeviceVersion), so a static lookup
+  table won't work. Decode/encode are inherently different logic per type. Only direction
+  and expects_extra_data are static, but extracting just those saves minimal code.
+  The PktType enum refactor (item 2) already gives exhaustive matching, which catches
+  missing arms at compile time when a new variant is added.
 
 - [ ] **Wrap multi-field variants in dedicated structs**
   `Packet::DeviceConnect` (7 fields), `InterfaceInfo`, `EpInfo` should be wrapped in
