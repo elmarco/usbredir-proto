@@ -56,8 +56,12 @@ impl DataKind {
     }
 
     /// Returns the `length` field from the type-specific header.
+    ///
+    /// This is the transfer length declared in the wire header, not the
+    /// length of the `data` payload (which may differ, e.g. for requests
+    /// where data hasn't arrived yet).
     #[must_use]
-    pub fn length(&self) -> u32 {
+    pub fn transfer_length(&self) -> u32 {
         match self {
             DataKind::Control { length, .. } => *length as u32,
             DataKind::Bulk { length, .. } => *length,

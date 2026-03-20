@@ -276,6 +276,11 @@ impl Endpoint {
     }
 
     /// Returns `true` if this is an OUT endpoint (host-to-device).
+    ///
+    /// Note: endpoint 0 (`Endpoint::new(0)`) returns `true` here even though
+    /// USB endpoint 0 is bidirectional (control endpoint). The usbredir protocol
+    /// uses the direction bit in data packet headers to distinguish IN vs OUT
+    /// control transfers, so EP0 with bit 7 clear is treated as OUT.
     #[must_use]
     pub const fn is_output(self) -> bool {
         self.0 & 0x80 == 0

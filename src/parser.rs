@@ -716,7 +716,7 @@ impl Parser {
             Packet::Data(d) => {
                 use crate::packet::DataKind;
                 let wire_type = d.kind.packet_type();
-                let header_length = d.kind.length() as usize;
+                let header_length = d.kind.transfer_length() as usize;
 
                 match &d.kind {
                     DataKind::Bulk { length, .. } => {
