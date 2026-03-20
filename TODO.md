@@ -53,9 +53,9 @@
   Done: added `#[doc(hidden)]` to `verify_rules`. The function is retained for forward
   compatibility but hidden from public API documentation.
 
-- [ ] **Remove `our_caps` / `config.caps` redundancy**
-  `Parser` stores both `config.caps` and `our_caps` (a modified copy). After construction,
-  `config` is never used again except by a `#[allow(dead_code)]` accessor.
+- [x] **Remove `our_caps` / `config.caps` redundancy**
+  Done: removed the `config` field from `Parser` entirely. All needed values (`caps`,
+  `no_hello`, `version`) are extracted in `new()` and the dead `config()` accessor is removed.
 
 - [ ] **`Caps::from_le_bytes` silently truncates extra words**
   If the peer sends more capability words than `CAPS_SIZE`, extra bytes are silently

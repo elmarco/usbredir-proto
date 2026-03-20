@@ -160,7 +160,6 @@ pub(crate) enum ParseState {
 /// wire bytes with [`drain()`](Self::drain) or [`drain_output()`](Self::drain_output).
 pub struct Parser<R: Role> {
     _role: PhantomData<R>,
-    config: ParserConfig,
     our_caps: Caps,
     peer_caps: Option<Caps>,
 
@@ -204,9 +203,9 @@ impl<R: Role> Parser<R> {
         our_caps = our_caps.verified();
 
         let no_hello = config.no_hello;
+        let version = config.version;
         let mut parser = Self {
             _role: PhantomData,
-            config,
             our_caps,
             peer_caps: None,
             input: BytesMut::new(),
@@ -219,7 +218,7 @@ impl<R: Role> Parser<R> {
 
         if !no_hello {
             let hello = Packet::Hello {
-                version: parser.config.version.clone(),
+                version,
                 caps: our_caps,
             };
             parser
@@ -1656,11 +1655,6 @@ impl<R: Role> Parser<R> {
 
     pub(crate) fn is_using_32bit_ids(&self) -> bool {
         self.using_32bit_ids()
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn config(&self) -> &ParserConfig {
-        &self.config
     }
 
     pub(crate) fn set_peer_caps(&mut self, caps: Caps) {
