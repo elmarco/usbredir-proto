@@ -945,7 +945,9 @@ impl Packet {
         stream_id: u32,
         data: impl Into<Bytes>,
     ) -> Self {
-        Self::Data(DataPacket::bulk(id, endpoint, status, length, stream_id, data))
+        Self::Data(DataPacket::bulk(
+            id, endpoint, status, length, stream_id, data,
+        ))
     }
 
     /// Create an IsoPacket.

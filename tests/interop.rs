@@ -1522,12 +1522,31 @@ fn interop_control_packet() {
             let mut data = [0xAA, 0xBB, 0xCC];
             sys::usbredirparser_send_control_packet(cp, 80, &mut h, data.as_mut_ptr(), 3);
         }
-        let pkt = Packet::control_packet(80, Endpoint::new(0x00), 0x09, 0x00, Status::Success, 0x0001, 0, 3, Bytes::from_static(&[0xAA, 0xBB, 0xCC]));
+        let pkt = Packet::control_packet(
+            80,
+            Endpoint::new(0x00),
+            0x09,
+            0x00,
+            Status::Success,
+            0x0001,
+            0,
+            3,
+            Bytes::from_static(&[0xAA, 0xBB, 0xCC]),
+        );
         // C(guest) → Rust(host)
         c_to_rust(
             false,
             c_encode,
-            |p| matches!(p, Packet::Data(DataPacket { id: 80, kind: DataKind::Control { .. }, .. })),
+            |p| {
+                matches!(
+                    p,
+                    Packet::Data(DataPacket {
+                        id: 80,
+                        kind: DataKind::Control { .. },
+                        ..
+                    })
+                )
+            },
             "control_packet",
         );
         // Rust(guest) → C(host)
@@ -1553,12 +1572,28 @@ fn interop_bulk_packet() {
             let mut data = [1, 2, 3, 4];
             sys::usbredirparser_send_bulk_packet(cp, 90, &mut h, data.as_mut_ptr(), 4);
         }
-        let pkt = Packet::bulk_packet(90, Endpoint::new(0x02), Status::Success, 4, 0, Bytes::from_static(&[1, 2, 3, 4]));
+        let pkt = Packet::bulk_packet(
+            90,
+            Endpoint::new(0x02),
+            Status::Success,
+            4,
+            0,
+            Bytes::from_static(&[1, 2, 3, 4]),
+        );
         // C(guest) → Rust(host)
         c_to_rust(
             false,
             c_encode,
-            |p| matches!(p, Packet::Data(DataPacket { id: 90, kind: DataKind::Bulk { .. }, .. })),
+            |p| {
+                matches!(
+                    p,
+                    Packet::Data(DataPacket {
+                        id: 90,
+                        kind: DataKind::Bulk { .. },
+                        ..
+                    })
+                )
+            },
             "bulk_packet",
         );
         // Rust(guest) → C(host)
@@ -1582,12 +1617,27 @@ fn interop_iso_packet() {
             let mut data = [0xDE, 0xAD];
             sys::usbredirparser_send_iso_packet(cp, 91, &mut h, data.as_mut_ptr(), 2);
         }
-        let pkt = Packet::iso_packet(91, Endpoint::new(0x81), Status::Success, 2, Bytes::from_static(&[0xDE, 0xAD]));
+        let pkt = Packet::iso_packet(
+            91,
+            Endpoint::new(0x81),
+            Status::Success,
+            2,
+            Bytes::from_static(&[0xDE, 0xAD]),
+        );
         // C(host) → Rust(guest)
         c_to_rust(
             true,
             c_encode,
-            |p| matches!(p, Packet::Data(DataPacket { id: 91, kind: DataKind::Iso { .. }, .. })),
+            |p| {
+                matches!(
+                    p,
+                    Packet::Data(DataPacket {
+                        id: 91,
+                        kind: DataKind::Iso { .. },
+                        ..
+                    })
+                )
+            },
             "iso_packet",
         );
         // Rust(host) → C(guest)
@@ -1611,12 +1661,27 @@ fn interop_interrupt_packet() {
             let mut data = [0xFF];
             sys::usbredirparser_send_interrupt_packet(cp, 92, &mut h, data.as_mut_ptr(), 1);
         }
-        let pkt = Packet::interrupt_packet(92, Endpoint::new(0x83), Status::Success, 1, Bytes::from_static(&[0xFF]));
+        let pkt = Packet::interrupt_packet(
+            92,
+            Endpoint::new(0x83),
+            Status::Success,
+            1,
+            Bytes::from_static(&[0xFF]),
+        );
         // C(host) → Rust(guest)
         c_to_rust(
             true,
             c_encode,
-            |p| matches!(p, Packet::Data(DataPacket { id: 92, kind: DataKind::Interrupt { .. }, .. })),
+            |p| {
+                matches!(
+                    p,
+                    Packet::Data(DataPacket {
+                        id: 92,
+                        kind: DataKind::Interrupt { .. },
+                        ..
+                    })
+                )
+            },
             "interrupt_packet",
         );
         // Rust(host) → C(guest)
@@ -1640,12 +1705,28 @@ fn interop_buffered_bulk_packet() {
             let mut data = [10, 20, 30];
             sys::usbredirparser_send_buffered_bulk_packet(cp, 93, &mut h, data.as_mut_ptr(), 3);
         }
-        let pkt = Packet::buffered_bulk_packet(93, 5, 3, Endpoint::new(0x82), Status::Success, Bytes::from_static(&[10, 20, 30]));
+        let pkt = Packet::buffered_bulk_packet(
+            93,
+            5,
+            3,
+            Endpoint::new(0x82),
+            Status::Success,
+            Bytes::from_static(&[10, 20, 30]),
+        );
         // C(host) → Rust(guest)
         c_to_rust(
             true,
             c_encode,
-            |p| matches!(p, Packet::Data(DataPacket { id: 93, kind: DataKind::BufferedBulk { .. }, .. })),
+            |p| {
+                matches!(
+                    p,
+                    Packet::Data(DataPacket {
+                        id: 93,
+                        kind: DataKind::BufferedBulk { .. },
+                        ..
+                    })
+                )
+            },
             "buffered_bulk_packet",
         );
         // Rust(host) → C(guest)
@@ -2156,7 +2237,14 @@ fn interop_compat_16bit_bulk_length() {
 
         // Reverse: Rust encodes with 16-bit bulk length
         let (cp2, mut rp2) = connected_pair_with_caps(true, &mut c_caps, r_caps);
-        rp2.send(Packet::bulk_packet(100, Endpoint::new(0x02), Status::Success, 4, 0, Bytes::from_static(&[1, 2, 3, 4])))
+        rp2.send(Packet::bulk_packet(
+            100,
+            Endpoint::new(0x02),
+            Status::Success,
+            4,
+            0,
+            Bytes::from_static(&[1, 2, 3, 4]),
+        ))
         .unwrap();
         let rust_wire = rust_drain_all(&mut rp2);
 
@@ -2415,7 +2503,13 @@ fn verify_data_packet_wrong_direction() {
     // When guest sends, command_for_host = true
     // ep 0x81 = IN, !command_for_host = false → no data expected
     // ISO with no data in wrong direction → rejected
-    let result = rp.send(Packet::iso_packet(1, Endpoint::new(0x81), Status::Success, 0, Bytes::new()));
+    let result = rp.send(Packet::iso_packet(
+        1,
+        Endpoint::new(0x81),
+        Status::Success,
+        0,
+        Bytes::new(),
+    ));
     assert!(
         result.is_err(),
         "Should reject iso packet in wrong direction"
@@ -2466,13 +2560,13 @@ fn interop_filter_check_basic() {
         }];
         let rust_result = filter::check(
             &rust_rules,
-            0x00,
-            0x00,
-            0x00,
-            &[(0x08, 0x06, 0x50)],
-            0x1234,
-            0x5678,
-            0x0100,
+            &filter::DeviceInfo {
+                device_class: 0x00,
+                interfaces: &[(0x08, 0x06, 0x50)],
+                vendor_id: 0x1234,
+                product_id: 0x5678,
+                device_version_bcd: 0x0100,
+            },
             filter::CheckFlags::empty(),
         )
         .unwrap();
@@ -2526,13 +2620,13 @@ fn interop_filter_check_allow() {
         }];
         let rust_result = filter::check(
             &rust_rules,
-            0x00,
-            0x00,
-            0x00,
-            &[(0x08, 0x06, 0x50)],
-            0x1234,
-            0x5678,
-            0x0100,
+            &filter::DeviceInfo {
+                device_class: 0x00,
+                interfaces: &[(0x08, 0x06, 0x50)],
+                vendor_id: 0x1234,
+                product_id: 0x5678,
+                device_version_bcd: 0x0100,
+            },
             filter::CheckFlags::empty(),
         )
         .unwrap();
@@ -2582,13 +2676,13 @@ fn interop_filter_check_no_match() {
         }];
         let rust_result = filter::check(
             &rust_rules,
-            0x00,
-            0x00,
-            0x00,
-            &[(0x03, 0x00, 0x00)],
-            0x1234,
-            0x5678,
-            0x0100,
+            &filter::DeviceInfo {
+                device_class: 0x00,
+                interfaces: &[(0x03, 0x00, 0x00)],
+                vendor_id: 0x1234,
+                product_id: 0x5678,
+                device_version_bcd: 0x0100,
+            },
             filter::CheckFlags::empty(),
         )
         .unwrap();
@@ -2641,13 +2735,13 @@ fn interop_filter_check_vendor_product() {
         }];
         let rust_result = filter::check(
             &rust_rules,
-            0x00,
-            0x00,
-            0x00,
-            &[(0x08, 0x06, 0x50)],
-            0x1234,
-            0x5678,
-            0x0100,
+            &filter::DeviceInfo {
+                device_class: 0x00,
+                interfaces: &[(0x08, 0x06, 0x50)],
+                vendor_id: 0x1234,
+                product_id: 0x5678,
+                device_version_bcd: 0x0100,
+            },
             filter::CheckFlags::empty(),
         )
         .unwrap();
@@ -2683,13 +2777,13 @@ fn interop_filter_check_default_allow() {
 
         let rust_result = filter::check(
             &[],
-            0x00,
-            0x00,
-            0x00,
-            &[(0x08, 0x06, 0x50)],
-            0x1234,
-            0x5678,
-            0x0100,
+            &filter::DeviceInfo {
+                device_class: 0x00,
+                interfaces: &[(0x08, 0x06, 0x50)],
+                vendor_id: 0x1234,
+                product_id: 0x5678,
+                device_version_bcd: 0x0100,
+            },
             filter::CheckFlags::DEFAULT_ALLOW,
         )
         .unwrap();

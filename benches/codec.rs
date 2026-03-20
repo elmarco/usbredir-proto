@@ -55,7 +55,14 @@ fn bench_encode_bulk(c: &mut Criterion) {
     c.bench_function("encode_bulk_1k", |b| {
         b.iter(|| {
             guest
-                .send(Packet::bulk_packet(1, Endpoint::new(0x02), Status::Success, 1024, 0, data.clone()))
+                .send(Packet::bulk_packet(
+                    1,
+                    Endpoint::new(0x02),
+                    Status::Success,
+                    1024,
+                    0,
+                    data.clone(),
+                ))
                 .unwrap();
             while guest.drain().is_some() {}
         })
@@ -68,7 +75,14 @@ fn bench_decode_bulk(c: &mut Criterion) {
 
     // Encode a bulk packet to get its wire bytes
     guest
-        .send(Packet::bulk_packet(1, Endpoint::new(0x02), Status::Success, 1024, 0, data))
+        .send(Packet::bulk_packet(
+            1,
+            Endpoint::new(0x02),
+            Status::Success,
+            1024,
+            0,
+            data,
+        ))
         .unwrap();
     let wire = drain_all(&mut guest);
 
@@ -86,7 +100,17 @@ fn bench_encode_control(c: &mut Criterion) {
     c.bench_function("encode_control_no_data", |b| {
         b.iter(|| {
             guest
-                .send(Packet::control_packet(1, Endpoint::new(0x00), 0x09, 0x00, Status::Success, 1, 0, 0, Bytes::new()))
+                .send(Packet::control_packet(
+                    1,
+                    Endpoint::new(0x00),
+                    0x09,
+                    0x00,
+                    Status::Success,
+                    1,
+                    0,
+                    0,
+                    Bytes::new(),
+                ))
                 .unwrap();
             while guest.drain().is_some() {}
         })
@@ -141,13 +165,13 @@ fn bench_filter_check(c: &mut Criterion) {
         b.iter(|| {
             usbredir_proto::filter::check(
                 black_box(&rules),
-                0x00,
-                0x00,
-                0x00,
-                &[(0x08, 0x06, 0x50)],
-                0x1234,
-                0x5678,
-                0x0100,
+                &usbredir_proto::DeviceInfo {
+                    device_class: 0x00,
+                    interfaces: &[(0x08, 0x06, 0x50)],
+                    vendor_id: 0x1234,
+                    product_id: 0x5678,
+                    device_version_bcd: 0x0100,
+                },
                 CheckFlags::empty(),
             )
             .unwrap();

@@ -163,8 +163,9 @@ impl Parser {
         }
         our_caps = our_caps.verified();
 
+        let no_hello = config.no_hello;
         let mut parser = Self {
-            config: config.clone(),
+            config,
             our_caps,
             peer_caps: None,
             input: BytesMut::new(),
@@ -175,12 +176,14 @@ impl Parser {
             output_total_size: 0,
         };
 
-        if !config.no_hello {
+        if !no_hello {
             let hello = Packet::Hello {
-                version: config.version,
+                version: parser.config.version.clone(),
                 caps: our_caps,
             };
-            let _ = parser.send(hello);
+            parser
+                .send(hello)
+                .expect("Hello send cannot fail before negotiation");
         }
 
         parser
@@ -601,8 +604,7 @@ impl Parser {
                                     self.peer_caps = Some(peer_caps);
                                     #[cfg(feature = "tracing")]
                                     {
-                                        let id_bits =
-                                            if self.using_32bit_ids() { 32 } else { 64 };
+                                        let id_bits = if self.using_32bit_ids() { 32 } else { 64 };
                                         tracing::info!(
                                             peer_version = %version,
                                             id_bits,
@@ -814,17 +816,24 @@ impl Parser {
         Ok(())
     }
 
-    fn decode_packet(&self, pkt_type: u32, id: u64, type_header: &[u8], data: Bytes) -> Result<Packet> {
+    fn decode_packet(
+        &self,
+        pkt_type: u32,
+        id: u64,
+        type_header: &[u8],
+        data: Bytes,
+    ) -> Result<Packet> {
         macro_rules! wire_err {
             () => {
-                |_| Error::WireHeaderDecode { packet_type: pkt_type }
+                |_| Error::WireHeaderDecode {
+                    packet_type: pkt_type,
+                }
             };
         }
 
         match pkt_type {
             pkt_type::HELLO => {
-                let hdr = wire::HelloHeader::read_from_bytes(type_header)
-                    .map_err(wire_err!())?;
+                let hdr = wire::HelloHeader::read_from_bytes(type_header).map_err(wire_err!())?;
                 let version_bytes = &hdr.version;
                 let version = core::str::from_utf8(version_bytes)
                     .unwrap_or("")
@@ -863,8 +872,8 @@ impl Parser {
             pkt_type::DEVICE_DISCONNECT => Ok(Packet::DeviceDisconnect),
             pkt_type::RESET => Ok(Packet::Reset { id }),
             pkt_type::INTERFACE_INFO => {
-                let hdr = wire::InterfaceInfoHeader::read_from_bytes(type_header)
-                    .map_err(wire_err!())?;
+                let hdr =
+                    wire::InterfaceInfoHeader::read_from_bytes(type_header).map_err(wire_err!())?;
                 Ok(Packet::InterfaceInfo {
                     interface_count: hdr.interface_count.get(),
                     interface: hdr.interface,
@@ -881,8 +890,8 @@ impl Parser {
                 let mut max_streams = [0u32; 32];
 
                 if self.negotiated(Cap::BulkStreams) {
-                    let hdr = wire::EpInfoHeader::read_from_bytes(type_header)
-                        .map_err(wire_err!())?;
+                    let hdr =
+                        wire::EpInfoHeader::read_from_bytes(type_header).map_err(wire_err!())?;
                     for i in 0..32 {
                         ep_type[i] = TransferType::try_from(hdr.ep_type[i])
                             .map_err(Error::InvalidEnumValue)?;
@@ -939,8 +948,8 @@ impl Parser {
                 })
             }
             pkt_type::SET_ALT_SETTING => {
-                let hdr = wire::SetAltSettingHeader::read_from_bytes(type_header)
-                    .map_err(wire_err!())?;
+                let hdr =
+                    wire::SetAltSettingHeader::read_from_bytes(type_header).map_err(wire_err!())?;
                 Ok(Packet::SetAltSetting {
                     id,
                     interface: hdr.interface,
@@ -948,8 +957,8 @@ impl Parser {
                 })
             }
             pkt_type::GET_ALT_SETTING => {
-                let hdr = wire::GetAltSettingHeader::read_from_bytes(type_header)
-                    .map_err(wire_err!())?;
+                let hdr =
+                    wire::GetAltSettingHeader::read_from_bytes(type_header).map_err(wire_err!())?;
                 Ok(Packet::GetAltSetting {
                     id,
                     interface: hdr.interface,
@@ -976,8 +985,8 @@ impl Parser {
                 })
             }
             pkt_type::STOP_ISO_STREAM => {
-                let hdr = wire::StopIsoStreamHeader::read_from_bytes(type_header)
-                    .map_err(wire_err!())?;
+                let hdr =
+                    wire::StopIsoStreamHeader::read_from_bytes(type_header).map_err(wire_err!())?;
                 Ok(Packet::StopIsoStream {
                     id,
                     endpoint: Endpoint::new(hdr.endpoint),
@@ -1049,8 +1058,7 @@ impl Parser {
             pkt_type::FILTER_FILTER => {
                 // Data is a null-terminated string of filter rules
                 let s = if !data.is_empty() && data[data.len() - 1] == 0 {
-                    core::str::from_utf8(&data[..data.len() - 1])
-                        .map_err(|_| Error::InvalidUtf8)?
+                    core::str::from_utf8(&data[..data.len() - 1]).map_err(|_| Error::InvalidUtf8)?
                 } else {
                     return Err(Error::FilterNotNullTerminated);
                 };
@@ -1089,8 +1097,8 @@ impl Parser {
                 })
             }
             pkt_type::CONTROL_PACKET => {
-                let hdr = wire::ControlPacketHeader::read_from_bytes(type_header)
-                    .map_err(wire_err!())?;
+                let hdr =
+                    wire::ControlPacketHeader::read_from_bytes(type_header).map_err(wire_err!())?;
                 Ok(Packet::Data(crate::packet::DataPacket {
                     id,
                     endpoint: Endpoint::new(hdr.endpoint),
@@ -1136,8 +1144,8 @@ impl Parser {
                 }
             }
             pkt_type::ISO_PACKET => {
-                let hdr = wire::IsoPacketHeader::read_from_bytes(type_header)
-                    .map_err(wire_err!())?;
+                let hdr =
+                    wire::IsoPacketHeader::read_from_bytes(type_header).map_err(wire_err!())?;
                 Ok(Packet::Data(crate::packet::DataPacket {
                     id,
                     endpoint: Endpoint::new(hdr.endpoint),
@@ -1225,7 +1233,7 @@ impl Parser {
         }
 
         let bytes = buf.freeze();
-        self.output_total_size += bytes.len() as u64;
+        self.output_total_size = self.output_total_size.saturating_add(bytes.len() as u64);
         self.output.push_back(bytes);
 
         Ok(())
@@ -1573,7 +1581,7 @@ impl Parser {
     /// Pull the next chunk of encoded output bytes, or `None` if empty.
     pub fn drain(&mut self) -> Option<Bytes> {
         if let Some(buf) = self.output.pop_front() {
-            self.output_total_size -= buf.len() as u64;
+            self.output_total_size = self.output_total_size.saturating_sub(buf.len() as u64);
             Some(buf)
         } else {
             None
@@ -1633,7 +1641,7 @@ impl Parser {
     }
 
     pub(crate) fn restore_output(&mut self, buf: Bytes) {
-        self.output_total_size += buf.len() as u64;
+        self.output_total_size = self.output_total_size.saturating_add(buf.len() as u64);
         self.output.push_back(buf);
     }
 }

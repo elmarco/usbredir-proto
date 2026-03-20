@@ -225,6 +225,21 @@ fn check1(
     }
 }
 
+/// Descriptor of a USB device passed to [`check()`].
+#[derive(Debug, Clone)]
+pub struct DeviceInfo<'a> {
+    /// USB device class code (bDeviceClass).
+    pub device_class: u8,
+    /// Per-interface (class, subclass, protocol) tuples.
+    pub interfaces: &'a [(u8, u8, u8)],
+    /// USB vendor ID (idVendor).
+    pub vendor_id: u16,
+    /// USB product ID (idProduct).
+    pub product_id: u16,
+    /// BCD-encoded device version (bcdDevice).
+    pub device_version_bcd: u16,
+}
+
 /// Check a device against a filter rule set, returning allow/deny/no-match.
 ///
 /// Matching proceeds in two stages:
@@ -236,16 +251,9 @@ fn check1(
 ///
 /// The first matching rule wins. If no rule matches, the result depends on
 /// [`CheckFlags::DEFAULT_ALLOW`].
-#[allow(clippy::too_many_arguments, clippy::only_used_in_recursion)]
 pub fn check(
     rules: &[FilterRule],
-    device_class: u8,
-    device_subclass: u8,
-    device_protocol: u8,
-    interfaces: &[(u8, u8, u8)], // (class, subclass, protocol)
-    vendor_id: u16,
-    product_id: u16,
-    device_version_bcd: u16,
+    device: &DeviceInfo<'_>,
     flags: CheckFlags,
 ) -> Result<FilterResult, FilterError> {
     verify_rules(rules)?;
@@ -253,13 +261,13 @@ pub fn check(
     let default_allow = flags.contains(CheckFlags::DEFAULT_ALLOW);
 
     // Check device class (skip for 0x00 and 0xef)
-    if device_class != 0x00 && device_class != 0xef {
+    if device.device_class != 0x00 && device.device_class != 0xef {
         let rc = check1(
             rules,
-            device_class,
-            vendor_id,
-            product_id,
-            device_version_bcd,
+            device.device_class,
+            device.vendor_id,
+            device.product_id,
+            device.device_version_bcd,
             default_allow,
         );
         match rc {
@@ -270,9 +278,9 @@ pub fn check(
 
     // Check interface classes
     let mut num_skipped = 0;
-    for &(iface_class, iface_subclass, iface_protocol) in interfaces {
+    for &(iface_class, iface_subclass, iface_protocol) in device.interfaces {
         if !flags.contains(CheckFlags::DONT_SKIP_NON_BOOT_HID)
-            && interfaces.len() > 1
+            && device.interfaces.len() > 1
             && iface_class == 0x03
             && iface_subclass == 0x00
             && iface_protocol == 0x00
@@ -283,9 +291,9 @@ pub fn check(
         let rc = check1(
             rules,
             iface_class,
-            vendor_id,
-            product_id,
-            device_version_bcd,
+            device.vendor_id,
+            device.product_id,
+            device.device_version_bcd,
             default_allow,
         );
         match rc {
@@ -295,18 +303,8 @@ pub fn check(
     }
 
     // If all interfaces were skipped, recurse with DONT_SKIP_NON_BOOT_HID
-    if !interfaces.is_empty() && num_skipped == interfaces.len() {
-        return check(
-            rules,
-            device_class,
-            device_subclass,
-            device_protocol,
-            interfaces,
-            vendor_id,
-            product_id,
-            device_version_bcd,
-            flags | CheckFlags::DONT_SKIP_NON_BOOT_HID,
-        );
+    if !device.interfaces.is_empty() && num_skipped == device.interfaces.len() {
+        return check(rules, device, flags | CheckFlags::DONT_SKIP_NON_BOOT_HID);
     }
 
     Ok(FilterResult::Allow)

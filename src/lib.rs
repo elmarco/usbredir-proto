@@ -69,7 +69,7 @@ pub mod codec;
 
 pub use caps::{Cap, Caps};
 pub use error::{Error, FilterError, Result};
-pub use filter::{CheckFlags, FilterResult, FilterRule};
+pub use filter::{CheckFlags, DeviceInfo, FilterResult, FilterRule};
 pub use packet::{DataKind, DataPacket, Packet};
 pub use parser::{Event, Parser, ParserConfig};
 pub use proto::{Endpoint, Speed, Status, TransferType};

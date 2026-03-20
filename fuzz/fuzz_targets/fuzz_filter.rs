@@ -17,13 +17,13 @@ fuzz_target!(|data: &[u8]| {
             // Test check with dummy device info
             let _ = usbredir_proto::filter::check(
                 &rules,
-                0x00,
-                0x00,
-                0x00,
-                &[(0x08, 0x06, 0x50)],
-                0x1234,
-                0x5678,
-                0x0100,
+                &usbredir_proto::DeviceInfo {
+                    device_class: 0x00,
+                    interfaces: &[(0x08, 0x06, 0x50)],
+                    vendor_id: 0x1234,
+                    product_id: 0x5678,
+                    device_version_bcd: 0x0100,
+                },
                 usbredir_proto::CheckFlags::empty(),
             );
         }
