@@ -128,3 +128,37 @@
 - [x] **Consider `num_enum` for `TryFrom` boilerplate** — WONTFIX
   The ~80 lines of manual impls work correctly and adding a proc-macro dependency
   for cosmetic reduction isn't worth it for a `no_std` library.
+
+## Open items (from design review)
+
+### Medium priority
+
+- [ ] **Default `max_input_buffer` to a safe limit**
+  Currently defaults to `None` (unlimited). A malicious peer can send a header claiming
+  ~128 MiB of body, causing unbounded allocation. Consider defaulting to a reasonable
+  limit (e.g., 2 MiB or 16 MiB) rather than requiring opt-in.
+  — File: `src/parser.rs:97`
+
+- [ ] **Add doc examples for proper error handling**
+  `Event::Error` is easy to accidentally ignore (e.g.,
+  `events().filter_map(|e| match e { Event::Packet(p) => Some(p), _ => None })`).
+  Add a doc example on `Parser` or `Event` showing canonical error handling patterns.
+
+### Low priority
+
+- [ ] **Add a sync/no-std usage example**
+  The only example (`testclient`) requires tokio. A bare `feed`/`poll`/`drain` loop
+  over a `TcpStream` would help users who don't use async or who target no-std.
+
+- [ ] **Add a serialization/migration example**
+  The serialize/unserialize API is powerful but has no usage example. Useful for users
+  implementing live VM migration.
+
+- [ ] **Document no-std support**
+  The crate supports `no_std` via feature flags but this isn't mentioned in the
+  crate-level docs or README.
+
+- [ ] **Clarify `Direction` enum naming**
+  `Direction::ToHost` means "sent by guest, received by host". This matches the C
+  convention but could confuse newcomers. Consider adding a clarifying doc comment
+  on `PktType::direction()`.
