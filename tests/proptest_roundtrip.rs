@@ -81,7 +81,9 @@ fn arb_speed() -> impl Strategy<Value = Speed> {
 }
 
 fn arb_endpoint() -> impl Strategy<Value = Endpoint> {
-    any::<u8>().prop_map(Endpoint::new)
+    (any::<bool>(), 0u8..16).prop_map(|(is_in, num)| {
+        Endpoint::new(if is_in { num | 0x80 } else { num })
+    })
 }
 
 fn arb_input_endpoint() -> impl Strategy<Value = Endpoint> {

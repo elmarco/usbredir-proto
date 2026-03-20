@@ -159,15 +159,21 @@ impl TryFrom<u8> for TransferType {
 /// assert!(ep.is_input());
 /// assert_eq!(ep.number(), 1);
 /// assert_eq!(ep.raw(), 0x81);
+///
+/// // Reserved bits 4–6 are masked off:
+/// assert_eq!(Endpoint::new(0xFF).raw(), 0x8F);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Endpoint(u8);
 
 impl Endpoint {
     /// Create an endpoint from a raw USB endpoint address byte.
+    ///
+    /// Bits 4–6 are reserved per the USB spec and are masked off.
+    /// Only bit 7 (direction) and bits 0–3 (endpoint number) are kept.
     #[must_use]
     pub const fn new(raw: u8) -> Self {
-        Self(raw)
+        Self(raw & 0x8F)
     }
 
     /// The raw endpoint address byte.
@@ -197,7 +203,7 @@ impl Endpoint {
 
 impl From<u8> for Endpoint {
     fn from(v: u8) -> Self {
-        Self(v)
+        Self::new(v)
     }
 }
 
