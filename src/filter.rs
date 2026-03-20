@@ -140,7 +140,8 @@ fn int_to_opt_u16(val: Option<i64>) -> Result<Option<u16>, FilterError> {
 ///
 /// Currently a no-op: all field ranges are enforced by the type system
 /// (`Option<u8>` for class, `Option<u16>` for vendor/product/bcd). Retained
-/// as a public API entry point for future protocol extensions.
+/// for forward compatibility with future protocol extensions.
+#[doc(hidden)]
 pub fn verify_rules(_rules: &[FilterRule]) -> Result<(), FilterError> {
     Ok(())
 }

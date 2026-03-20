@@ -49,9 +49,9 @@
   Done: documented the rationale in the `Event` type alias doc comment. `Packet` is ~288
   bytes due to `EpInfo`; boxing is correct to avoid bloating `VecDeque` slots.
 
-- [ ] **Remove or hide `verify_rules` no-op**
-  `filter.rs:144` — public function that does nothing. Either remove it or make it
-  `#[doc(hidden)]`.
+- [x] **Remove or hide `verify_rules` no-op**
+  Done: added `#[doc(hidden)]` to `verify_rules`. The function is retained for forward
+  compatibility but hidden from public API documentation.
 
 - [ ] **Remove `our_caps` / `config.caps` redundancy**
   `Parser` stores both `config.caps` and `our_caps` (a modified copy). After construction,
