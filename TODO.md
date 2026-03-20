@@ -31,10 +31,9 @@
   `control_packet()` constructor left as-is — users can construct `Packet::Data(DataPacket { .. })`
   directly for full control.
 
-- [ ] **Handle duplicate Hello consistently**
-  When a duplicate Hello arrives (`parser.rs:641`), it's logged but still pushed as an
-  `Ok(packet)` event. The `Error::DuplicateHello` variant exists but is never used.
-  Either emit it as an error event, or don't push the packet.
+- [x] **Handle duplicate Hello consistently**
+  Done: duplicate Hello now emits `Err(Error::DuplicateHello)` and does not push the
+  packet as an event. The existing `Error::DuplicateHello` variant is now used.
 
 ## Low priority
 

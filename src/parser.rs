@@ -649,20 +649,20 @@ impl<R: Role> Parser<R> {
                             } = packet
                             {
                                 if self.peer_caps.is_some() {
-                                    #[cfg(feature = "tracing")]
-                                    tracing::error!("Received second hello message, ignoring");
-                                } else {
-                                    let peer_caps = caps.verified();
-                                    self.peer_caps = Some(peer_caps);
-                                    #[cfg(feature = "tracing")]
-                                    {
-                                        let id_bits = if self.using_32bit_ids() { 32 } else { 64 };
-                                        tracing::info!(
-                                            peer_version = %version,
-                                            id_bits,
-                                            "Peer hello received"
-                                        );
-                                    }
+                                    self.events.push_back(Err(Error::DuplicateHello));
+                                    self.state = ParseState::Header;
+                                    continue;
+                                }
+                                let peer_caps = caps.verified();
+                                self.peer_caps = Some(peer_caps);
+                                #[cfg(feature = "tracing")]
+                                {
+                                    let id_bits = if self.using_32bit_ids() { 32 } else { 64 };
+                                    tracing::info!(
+                                        peer_version = %version,
+                                        id_bits,
+                                        "Peer hello received"
+                                    );
                                 }
                             }
                             self.events.push_back(Ok(Box::new(packet)));
