@@ -512,7 +512,11 @@ impl<R: Role> Parser<R> {
     /// Pull the next decoded packet, skipping any parse errors.
     ///
     /// This is a convenience wrapper around [`poll()`](Self::poll) for callers
-    /// that don't need to handle parse errors. Errors are silently discarded.
+    /// that don't need to handle parse errors. Errors (unknown packet types,
+    /// malformed headers, direction violations, duplicate Hello, etc.) are
+    /// **silently discarded**. Prefer [`poll()`](Self::poll) or
+    /// [`events()`](Self::events) in production code to avoid missing protocol
+    /// violations or connection-level errors.
     pub fn poll_packet(&mut self) -> Option<Box<Packet>> {
         loop {
             match self.events.pop_front()? {

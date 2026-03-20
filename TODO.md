@@ -62,9 +62,9 @@
   to set a cap, and our side can never set caps beyond `CAPS_SIZE`. Matches C library
   behavior.
 
-- [ ] **`poll_packet()` silently discards errors**
-  Documented but dangerous as a default API. Users should explicitly opt into ignoring
-  errors.
+- [x] **`poll_packet()` silently discards errors**
+  Done: expanded doc comment to list the error types being discarded and recommend
+  `poll()` / `events()` for production code.
 
 - [ ] **`#[non_exhaustive]` trade-off**
   `Packet`/`DataKind`/`RequestKind` are `#[non_exhaustive]`, preventing exhaustive
