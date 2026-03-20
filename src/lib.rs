@@ -68,8 +68,11 @@ pub(crate) mod wire;
 pub mod codec;
 
 pub use caps::{Cap, Caps};
-pub use error::{Error, FilterError, Result};
+pub use error::{Error, FilterError, Result, SerializeError};
 pub use filter::{CheckFlags, DeviceInfo, FilterResult, FilterRule};
-pub use packet::{DataKind, DataPacket, DeviceConnectInfo, Packet, RequestKind, RequestPacket};
+pub use packet::{
+    DataKind, DataPacket, DeviceConnectInfo, EpInfoData, InterfaceInfoData, Packet, RequestKind,
+    RequestPacket,
+};
 pub use parser::{Event, Guest, Host, Parser, ParserConfig, Role};
 pub use proto::{Endpoint, PktType, Speed, Status, TransferType};

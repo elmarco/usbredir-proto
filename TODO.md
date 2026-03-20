@@ -15,6 +15,25 @@
   module is `#[doc(hidden)]`. Match arms are now exhaustive (no `_ =>` fallthrough
   in `decode_packet`). Error variants use `PktType` where the type is known-valid.
 
+- [x] **Extract `EpInfo`/`InterfaceInfo` into boxed structs**
+  Done: extracted `EpInfoData` and `InterfaceInfoData` structs, boxed in the enum as
+  `EpInfo(Box<EpInfoData>)` and `InterfaceInfo(Box<InterfaceInfoData>)`. Updated all
+  constructors, match arms, tests, and examples. `Packet` inline size reduced from
+  ~300 bytes to ~40 bytes.
+
+- [x] **Split `Error` into subsystem-specific types**
+  Done: extracted `SerializeError` with 6 variants (`BadMagic`, `LengthMismatch`,
+  `CapsMismatch`, `BufferUnderrun`, `EmptyWriteBuffer`, `ExtraneousData`).
+  `serialize()`/`unserialize()` now return `Result<T, SerializeError>` directly.
+  `Error::Serialize(SerializeError)` wraps it for callers using the unified type.
+  Parse/encode errors share too many variants (direction, capability checks) to split
+  further without duplication.
+
+- [x] **Add input buffer size limits**
+  Done: added `max_input_buffer: Option<usize>` to `ParserConfig` (default `None` =
+  unlimited). `feed()` now returns `Result<()>` and errors with `Error::InputBufferFull`
+  when the limit would be exceeded. No bytes are consumed on overflow.
+
 ## Medium priority
 
 - [x] **Centralize packet metadata (direction, header size, etc.)** — WONTFIX
@@ -34,6 +53,30 @@
 - [x] **Handle duplicate Hello consistently**
   Done: duplicate Hello now emits `Err(Error::DuplicateHello)` and does not push the
   packet as an event. The existing `Error::DuplicateHello` variant is now used.
+
+- [ ] **Simplify direction logic in `get_type_header_len()`**
+  The `sending` flag inverts `command_for_host`, making the ~200-line match hard to follow.
+  Consider encoding the direction constraint in `PktType` itself (e.g., a method
+  `PktType::direction() -> Direction` returning `HostToGuest | GuestToHost | Bidirectional`),
+  reducing the per-variant check to a 3-line function.
+
+- [ ] **Remove or deprecate `poll_packet()`**
+  Silently discards all errors. The doc comment already warns about this, but its existence
+  encourages misuse. Consider `#[deprecated]` or removal in a 0.x version.
+
+- [ ] **Fix misleading codec decode loop**
+  `codec.rs:59-65`: The loop looks like it processes multiple events but returns on the first
+  one. Replace with a direct `self.parser.poll()` call — Tokio's `Framed` will call `decode()`
+  again for subsequent packets.
+
+- [ ] **Replace `Borrow<Packet>` with `&Packet` on `send()`**
+  The `impl Borrow<Packet>` bound adds complexity without clear benefit. `Borrow` is
+  idiomatically for collections/lookup, not function arguments. Use `&Packet` directly.
+
+- [ ] **Make `Event` a proper enum instead of a type alias**
+  `Event = Result<Box<Packet>>` hides that errors are also queued. A dedicated
+  `enum Event { Packet(Box<Packet>), Error(Error) }` would be more self-documenting
+  and allow adding event types (e.g., `PeerHelloReceived`) without breaking the API.
 
 ## Low priority
 
@@ -69,3 +112,24 @@
 - [x] **`#[non_exhaustive]` trade-off**
   Done: documented the rationale on `Packet` enum and noted the version-pinning
   workaround for callers who prefer exhaustive matching.
+
+- [ ] **Add `has_events()` method to `Parser`**
+  Symmetric with existing `has_data_to_write()`. Lets callers check if events are pending
+  without draining, useful after `feed()`.
+
+- [ ] **`Caps::set` hidden side-effect**
+  `set(Cap::BulkStreams)` silently also sets `Cap::EpInfoMaxPacketSize`. Documented but
+  surprising. Consider making this more explicit (e.g., a separate `with_bulk_streams()`
+  constructor, or returning `&mut Self` to make chaining visible).
+
+- [ ] **`Endpoint::new()` silently masks reserved bits**
+  `Endpoint::new(0xFF)` becomes `0x8F`. Correct per USB spec but surprising. Consider
+  providing `TryFrom<u8>` that rejects reserved bits, or renaming to `from_raw()` to
+  signal masking.
+
+- [ ] **Remove `#[doc(hidden)] pkt_type` constants module**
+  Duplicates the `PktType` enum. In a 0.x version, remove rather than carry dead weight.
+
+- [ ] **Consider `num_enum` for `TryFrom` boilerplate**
+  `PktType`, `Status`, `TransferType`, `Speed` all have manual 30+ line `TryFrom` impls
+  that could be derived.

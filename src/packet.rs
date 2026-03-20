@@ -406,6 +406,43 @@ pub struct DeviceConnectInfo {
     pub device_version_bcd: u16,
 }
 
+/// USB interface descriptor information, sent in a [`InterfaceInfo`](Packet::InterfaceInfo) packet.
+///
+/// Arrays are indexed by interface number. Only the first
+/// `interface_count` entries are meaningful.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InterfaceInfoData {
+    /// Number of interfaces (max 32).
+    pub interface_count: u32,
+    /// Interface numbers.
+    pub interface: [u8; 32],
+    /// Interface class codes.
+    pub interface_class: [u8; 32],
+    /// Interface subclass codes.
+    pub interface_subclass: [u8; 32],
+    /// Interface protocol codes.
+    pub interface_protocol: [u8; 32],
+}
+
+/// USB endpoint descriptor information, sent in an [`EpInfo`](Packet::EpInfo) packet.
+///
+/// USB devices have up to 16 endpoints × 2 directions = 32 slots
+/// (indexed 0x00–0x0F for OUT, 0x80–0x8F for IN). Unused slots have
+/// `ep_type` set to [`TransferType::Invalid`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EpInfoData {
+    /// Transfer type for each endpoint slot.
+    pub ep_type: [TransferType; 32],
+    /// Polling interval for each endpoint slot.
+    pub interval: [u8; 32],
+    /// Interface number for each endpoint slot.
+    pub interface: [u8; 32],
+    /// Maximum packet size for each endpoint slot.
+    pub max_packet_size: [u16; 32],
+    /// Maximum number of streams for each endpoint slot (USB 3.0 bulk streams).
+    pub max_streams: [u32; 32],
+}
+
 /// A decoded usbredir protocol packet.
 ///
 /// The protocol uses a request/response model between a **host** (physical USB
@@ -442,28 +479,9 @@ pub enum Packet {
     /// Host → guest: the USB device has been disconnected.
     DeviceDisconnect,
     /// Host → guest: describes the device's USB interfaces (up to 32).
-    ///
-    /// Arrays are indexed by interface number. Only the first
-    /// `interface_count` entries are meaningful.
-    InterfaceInfo {
-        interface_count: u32,
-        interface: [u8; 32],
-        interface_class: [u8; 32],
-        interface_subclass: [u8; 32],
-        interface_protocol: [u8; 32],
-    },
+    InterfaceInfo(Box<InterfaceInfoData>),
     /// Host → guest: describes all 32 endpoint slots.
-    ///
-    /// USB devices have up to 16 endpoints × 2 directions = 32 slots
-    /// (indexed 0x00–0x0F for OUT, 0x80–0x8F for IN). Unused slots have
-    /// `ep_type` set to [`TransferType::Invalid`].
-    EpInfo {
-        ep_type: [TransferType; 32],
-        interval: [u8; 32],
-        interface: [u8; 32],
-        max_packet_size: [u16; 32],
-        max_streams: [u32; 32],
-    },
+    EpInfo(Box<EpInfoData>),
     /// Guest → host: the guest rejected the device (e.g. due to filter rules).
     /// Requires [`Cap::Filter`](crate::Cap::Filter).
     FilterReject,
@@ -495,12 +513,10 @@ impl core::fmt::Display for Packet {
                 )
             }
             Packet::DeviceDisconnect => write!(f, "DeviceDisconnect"),
-            Packet::InterfaceInfo {
-                interface_count, ..
-            } => {
-                write!(f, "InterfaceInfo(count={interface_count})")
+            Packet::InterfaceInfo(info) => {
+                write!(f, "InterfaceInfo(count={})", info.interface_count)
             }
-            Packet::EpInfo { .. } => write!(f, "EpInfo"),
+            Packet::EpInfo(_) => write!(f, "EpInfo"),
             Packet::FilterReject => write!(f, "FilterReject"),
             Packet::FilterFilter { rules } => write!(f, "FilterFilter(rules={})", rules.len()),
             Packet::DeviceDisconnectAck => write!(f, "DeviceDisconnectAck"),
@@ -518,8 +534,8 @@ impl Packet {
             Packet::Hello { .. } => PktType::Hello,
             Packet::DeviceConnect(_) => PktType::DeviceConnect,
             Packet::DeviceDisconnect => PktType::DeviceDisconnect,
-            Packet::InterfaceInfo { .. } => PktType::InterfaceInfo,
-            Packet::EpInfo { .. } => PktType::EpInfo,
+            Packet::InterfaceInfo(_) => PktType::InterfaceInfo,
+            Packet::EpInfo(_) => PktType::EpInfo,
             Packet::FilterReject => PktType::FilterReject,
             Packet::FilterFilter { .. } => PktType::FilterFilter,
             Packet::DeviceDisconnectAck => PktType::DeviceDisconnectAck,
@@ -538,8 +554,8 @@ impl Packet {
             Packet::Hello { .. }
             | Packet::DeviceConnect(_)
             | Packet::DeviceDisconnect
-            | Packet::InterfaceInfo { .. }
-            | Packet::EpInfo { .. }
+            | Packet::InterfaceInfo(_)
+            | Packet::EpInfo(_)
             | Packet::FilterReject
             | Packet::FilterFilter { .. }
             | Packet::DeviceDisconnectAck => None,
@@ -614,38 +630,14 @@ impl Packet {
 
     /// Create an InterfaceInfo packet.
     #[must_use]
-    pub fn interface_info(
-        interface_count: u32,
-        interface: [u8; 32],
-        interface_class: [u8; 32],
-        interface_subclass: [u8; 32],
-        interface_protocol: [u8; 32],
-    ) -> Self {
-        Self::InterfaceInfo {
-            interface_count,
-            interface,
-            interface_class,
-            interface_subclass,
-            interface_protocol,
-        }
+    pub fn interface_info(info: InterfaceInfoData) -> Self {
+        Self::InterfaceInfo(Box::new(info))
     }
 
     /// Create an EpInfo packet.
     #[must_use]
-    pub fn ep_info(
-        ep_type: [TransferType; 32],
-        interval: [u8; 32],
-        interface: [u8; 32],
-        max_packet_size: [u16; 32],
-        max_streams: [u32; 32],
-    ) -> Self {
-        Self::EpInfo {
-            ep_type,
-            interval,
-            interface,
-            max_packet_size,
-            max_streams,
-        }
+    pub fn ep_info(info: EpInfoData) -> Self {
+        Self::EpInfo(Box::new(info))
     }
 
     /// Create a FilterFilter packet.

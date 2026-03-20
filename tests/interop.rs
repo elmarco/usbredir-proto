@@ -324,6 +324,7 @@ fn rust_config() -> ParserConfig {
         version: "rust-test".to_string(),
         caps: rust_caps(),
         no_hello: false,
+            max_input_buffer: None,
     }
 }
 
@@ -439,7 +440,7 @@ unsafe fn connected_pair<R: Role>() -> (*mut sys::usbredirparser, Parser<R>) {
 
     // C hello → Rust
     let c_hello = c_capture(cp);
-    rp.feed(&c_hello);
+    rp.feed(&c_hello).unwrap();
     rust_drain_packets(&mut rp); // consume hello event
 
     // Rust hello → C
@@ -471,7 +472,7 @@ unsafe fn c_to_rust<R: Role>(
     let wire = c_capture(cp);
     assert!(!wire.is_empty(), "{name}: C produced no bytes");
 
-    rp.feed(&wire);
+    rp.feed(&wire).unwrap();
     let pkts = rust_drain_packets(&mut rp);
     assert!(
         pkts.iter().any(check_fn),
@@ -631,7 +632,7 @@ fn interop_reset() {
 #[test]
 fn interop_interface_info() {
     unsafe {
-        let pkt = Packet::InterfaceInfo {
+        let pkt = Packet::InterfaceInfo(Box::new(InterfaceInfoData {
             interface_count: 2,
             interface: {
                 let mut a = [0u8; 32];
@@ -647,7 +648,7 @@ fn interop_interface_info() {
             },
             interface_subclass: [0u8; 32],
             interface_protocol: [0u8; 32],
-        };
+        }));
 
         unsafe fn c_encode(cp: *mut sys::usbredirparser) {
             let mut h = sys::usb_redir_interface_info_header {
@@ -669,10 +670,7 @@ fn interop_interface_info() {
             |p| {
                 matches!(
                     p,
-                    Packet::InterfaceInfo {
-                        interface_count: 2,
-                        ..
-                    }
+                    Packet::InterfaceInfo(ref info) if info.interface_count == 2
                 )
             },
             "interface_info",
@@ -707,13 +705,13 @@ fn interop_ep_info() {
         ep_type[0] = TransferType::Bulk;
         let mut max_packet_size = [0u16; 32];
         max_packet_size[0] = 512;
-        let pkt = Packet::EpInfo {
+        let pkt = Packet::EpInfo(Box::new(EpInfoData {
             ep_type,
             interval: [0u8; 32],
             interface: [0u8; 32],
             max_packet_size,
             max_streams: [0u32; 32],
-        };
+        }));
         rust_to_c::<Host>(pkt.clone(), "ep_info");
         byte_compare::<Host>(c_encode, pkt, "ep_info");
     }
@@ -1590,6 +1588,7 @@ fn rust_minimal_config() -> ParserConfig {
         version: "rust-test-minimal".to_string(),
         caps: rust_minimal_caps(),
         no_hello: false,
+            max_input_buffer: None,
     }
 }
 
@@ -1664,7 +1663,7 @@ unsafe fn connected_pair_minimal<R: Role>() -> (*mut sys::usbredirparser, Parser
     let mut rp = Parser::<R>::new(rust_minimal_config());
 
     let c_hello = c_capture(cp);
-    rp.feed(&c_hello);
+    rp.feed(&c_hello).unwrap();
     rust_drain_packets(&mut rp);
 
     let rust_hello = rust_drain_all(&mut rp);
@@ -1685,10 +1684,11 @@ unsafe fn connected_pair_with_caps<R: Role>(
         version: "rust-test".to_string(),
         caps: r_caps,
         no_hello: false,
+            max_input_buffer: None,
     });
 
     let c_hello = c_capture(cp);
-    rp.feed(&c_hello);
+    rp.feed(&c_hello).unwrap();
     rust_drain_packets(&mut rp);
 
     let rust_hello = rust_drain_all(&mut rp);
@@ -1724,7 +1724,7 @@ fn interop_compat_32bit_ids() {
                                    // Total should be 12 (header) + 8 (device_connect without version) = 20
         assert_eq!(wire.len(), 20, "32-bit id header: expected 20 bytes");
 
-        rp.feed(&wire);
+        rp.feed(&wire).unwrap();
         let pkts = rust_drain_packets(&mut rp);
         assert!(
             pkts.iter().any(|p| matches!(
@@ -1805,7 +1805,7 @@ fn interop_compat_no_device_version() {
             "no-version device_connect should be 24 bytes"
         );
 
-        rp.feed(&wire);
+        rp.feed(&wire).unwrap();
         let pkts = rust_drain_packets(&mut rp);
         assert!(
             pkts.iter().any(|p| matches!(
@@ -1872,7 +1872,7 @@ fn interop_compat_no_ep_info_max_pktsz() {
         // 16 (header) + 96 (no max_pktsz: 32+32+32) = 112
         assert_eq!(wire.len(), 112, "no-max-pktsz ep_info should be 112 bytes");
 
-        rp.feed(&wire);
+        rp.feed(&wire).unwrap();
         let pkts = rust_drain_packets(&mut rp);
         assert!(
             pkts.iter().any(|p| matches!(p, Packet::EpInfo { .. })),
@@ -1881,7 +1881,7 @@ fn interop_compat_no_ep_info_max_pktsz() {
 
         // Reverse
         let (cp2, mut rp2) = connected_pair_with_caps::<Host>(&mut c_caps, r_caps);
-        rp2.send(&Packet::EpInfo {
+        rp2.send(&Packet::EpInfo(Box::new(EpInfoData {
             ep_type: {
                 let mut t = [TransferType::Control; 32];
                 t[0] = TransferType::Bulk;
@@ -1891,7 +1891,7 @@ fn interop_compat_no_ep_info_max_pktsz() {
             interface: [0u8; 32],
             max_packet_size: [0u16; 32],
             max_streams: [0u32; 32],
-        })
+        })))
         .unwrap();
         let rust_wire = rust_drain_all(&mut rp2);
         assert_eq!(rust_wire.len(), 112);
@@ -1939,7 +1939,7 @@ fn interop_compat_ep_info_no_max_streams() {
             "no-max-streams ep_info should be 176 bytes"
         );
 
-        rp.feed(&wire);
+        rp.feed(&wire).unwrap();
         let pkts = rust_drain_packets(&mut rp);
         assert!(
             pkts.iter().any(|p| matches!(p, Packet::EpInfo { .. })),
@@ -1983,7 +1983,7 @@ fn interop_compat_16bit_bulk_length() {
             "C produced no bytes for 16-bit bulk length"
         );
 
-        rp.feed(&wire);
+        rp.feed(&wire).unwrap();
         let pkts = rust_drain_packets(&mut rp);
         assert!(
             pkts.iter().any(|p| matches!(
@@ -2140,16 +2140,16 @@ fn verify_interface_count_too_large() {
     // simulate peer caps by feeding a hello
     let mut peer = Parser::<Guest>::new(rust_config());
     let peer_hello_bytes = rust_drain_all(&mut peer);
-    rp.feed(&peer_hello_bytes);
+    rp.feed(&peer_hello_bytes).unwrap();
     rust_drain_packets(&mut rp);
 
-    let result = rp.send(&Packet::InterfaceInfo {
+    let result = rp.send(&Packet::InterfaceInfo(Box::new(InterfaceInfoData {
         interface_count: 33,
         interface: [0u8; 32],
         interface_class: [0u8; 32],
         interface_subclass: [0u8; 32],
         interface_protocol: [0u8; 32],
-    });
+    })));
     assert!(result.is_err(), "Should reject interface_count > 32");
 }
 
@@ -2159,7 +2159,7 @@ fn verify_interrupt_receiving_non_input_ep() {
     let mut rp = Parser::<Guest>::new(rust_config()); // guest
     let mut peer = Parser::<Host>::new(rust_config());
     let peer_hello = rust_drain_all(&mut peer);
-    rp.feed(&peer_hello);
+    rp.feed(&peer_hello).unwrap();
     rust_drain_packets(&mut rp);
 
     // Endpoint 0x02 = OUT, should be rejected (interrupt receiving requires IN endpoint)
@@ -2181,7 +2181,7 @@ fn verify_bulk_receiving_non_input_ep() {
     let mut rp = Parser::<Guest>::new(rust_config()); // guest
     let mut peer = Parser::<Host>::new(rust_config());
     let peer_hello = rust_drain_all(&mut peer);
-    rp.feed(&peer_hello);
+    rp.feed(&peer_hello).unwrap();
     rust_drain_packets(&mut rp);
 
     let result = rp.send(&Packet::start_bulk_receiving(1, 0, 4096, Endpoint::new(0x02), 4));
@@ -2196,7 +2196,7 @@ fn verify_bulk_transfer_too_large() {
     let mut rp = Parser::<Guest>::new(rust_config()); // guest
     let mut peer = Parser::<Host>::new(rust_config());
     let peer_hello = rust_drain_all(&mut peer);
-    rp.feed(&peer_hello);
+    rp.feed(&peer_hello).unwrap();
     rust_drain_packets(&mut rp);
 
     let result = rp.send(&Packet::start_bulk_receiving(1, 0, 256 * 1024 * 1024, Endpoint::new(0x82), 4));
@@ -2214,13 +2214,14 @@ fn verify_filter_without_cap() {
             c
         },
         no_hello: false,
+            max_input_buffer: None,
     };
     let mut rp = Parser::<Guest>::new(config.clone());
 
     // Peer also without filter cap
     let mut peer = Parser::<Host>::new(config);
     let peer_hello = rust_drain_all(&mut peer);
-    rp.feed(&peer_hello);
+    rp.feed(&peer_hello).unwrap();
     rust_drain_packets(&mut rp);
 
     let result = rp.send(&Packet::FilterReject);
@@ -2236,7 +2237,7 @@ fn verify_data_packet_wrong_direction() {
     let mut rp = Parser::<Guest>::new(rust_config()); // guest sends
     let mut peer = Parser::<Host>::new(rust_config());
     let peer_hello = rust_drain_all(&mut peer);
-    rp.feed(&peer_hello);
+    rp.feed(&peer_hello).unwrap();
     rust_drain_packets(&mut rp);
 
     // Guest sends iso with IN endpoint (0x81) — guest is "command_for_host" side
@@ -2569,7 +2570,7 @@ fn interop_error_recovery_unknown_type() {
         // Feed bad packet + valid packet to Rust
         let mut combined = bad_packet;
         combined.extend_from_slice(&valid_wire);
-        rp.feed(&combined);
+        rp.feed(&combined).unwrap();
 
         // Should get a parse error for unknown type, then the valid packet
         let mut got_error = false;
@@ -2600,7 +2601,7 @@ fn interop_error_recovery_truncated_header() {
     let (_, mut rp) = unsafe { connected_pair::<Guest>() };
 
     // Feed just 4 bytes (incomplete 16-byte header)
-    rp.feed(&[0x01, 0x00, 0x00, 0x00]);
+    rp.feed(&[0x01, 0x00, 0x00, 0x00]).unwrap();
     assert!(
         rp.poll().is_none(),
         "Shouldn't produce events from partial header"
@@ -2618,7 +2619,7 @@ fn interop_error_recovery_truncated_header() {
     let mut rp2 = Parser::<Guest>::new(rust_config()); // guest, receives from host
     let mut peer = Parser::<Host>::new(rust_config());
     let peer_hello = rust_drain_all(&mut peer);
-    rp2.feed(&peer_hello);
+    rp2.feed(&peer_hello).unwrap();
     rust_drain_packets(&mut rp2);
 
     // Build a valid device_disconnect packet (type=2, length=0, id=0)
@@ -2629,7 +2630,7 @@ fn interop_error_recovery_truncated_header() {
 
     // Feed 1 byte at a time
     for &b in &pkt {
-        rp2.feed(&[b]);
+        rp2.feed(&[b]).unwrap();
     }
     let pkts = rust_drain_packets(&mut rp2);
     assert!(
@@ -2684,7 +2685,7 @@ fn interop_serialize_with_queued_output() {
 
         // Drain and feed to Rust guest parser to verify the packet is valid
         let output = rust_drain_all(&mut rp_restored);
-        rp.feed(&output);
+        rp.feed(&output).unwrap();
         let pkts = rust_drain_packets(&mut rp);
         assert!(
             pkts.iter()
@@ -2780,7 +2781,7 @@ fn fuzz_like_garbage_bytes() {
     ];
 
     for pattern in &patterns {
-        rp.feed(pattern);
+        rp.feed(pattern).unwrap();
         // Drain all events — must not panic
         while rp.poll().is_some() {}
     }
@@ -2794,7 +2795,7 @@ fn fuzz_like_valid_header_bad_body() {
     // Simulate peer hello so parser has peer caps
     let mut peer = Parser::<Host>::new(rust_config());
     let peer_hello = rust_drain_all(&mut peer);
-    rp.feed(&peer_hello);
+    rp.feed(&peer_hello).unwrap();
     while rp.poll().is_some() {}
 
     // Now feed packets with mismatched lengths
@@ -2815,7 +2816,7 @@ fn fuzz_like_valid_header_bad_body() {
         pkt.extend_from_slice(&length.to_le_bytes());
         pkt.extend_from_slice(&0u64.to_le_bytes()); // id
         pkt.extend_from_slice(body);
-        rp.feed(&pkt);
+        rp.feed(&pkt).unwrap();
         // Must not panic
         while rp.poll().is_some() {}
     }

@@ -17,14 +17,14 @@ use alloc::vec::Vec;
 use bytes::Bytes;
 
 use crate::caps::Caps;
-use crate::error::{Error, Result};
+use crate::error::SerializeError;
 use crate::parser::{Parser, ParserConfig, Role};
 
 const SERIALIZE_MAGIC: u32 = 0x55525031;
 
 impl<R: Role> Parser<R> {
     /// Serialize the parser state to a byte buffer (C-compatible format, magic `0x55525031`).
-    pub fn serialize(&self) -> Result<Vec<u8>> {
+    pub fn serialize(&self) -> core::result::Result<Vec<u8>, SerializeError> {
         let mut out = Vec::new();
 
         // Magic
@@ -101,17 +101,17 @@ impl<R: Role> Parser<R> {
 
     /// Restore a parser from serialized state. The `config` must have at least
     /// the same capabilities as the original parser.
-    pub fn unserialize(config: ParserConfig, data: &[u8]) -> Result<Self> {
+    pub fn unserialize(config: ParserConfig, data: &[u8]) -> core::result::Result<Self, SerializeError> {
         let mut pos = 0;
 
         let magic = read_u32(data, &mut pos)?;
         if magic != SERIALIZE_MAGIC {
-            return Err(Error::SerializeBadMagic);
+            return Err(SerializeError::BadMagic);
         }
 
         let total_len = read_u32(data, &mut pos)?;
         if total_len as usize != data.len() {
-            return Err(Error::SerializeLengthMismatch);
+            return Err(SerializeError::LengthMismatch);
         }
 
         // our_caps
@@ -120,7 +120,7 @@ impl<R: Role> Parser<R> {
 
         // Verify our_caps is a subset of config.caps
         if !our_caps.is_subset_of(&config.caps) {
-            return Err(Error::SerializeCapsMismatch);
+            return Err(SerializeError::CapsMismatch);
         }
 
         // peer_caps
@@ -171,13 +171,13 @@ impl<R: Role> Parser<R> {
         for _ in 0..write_buf_count {
             let buf_data = read_data(data, &mut pos)?;
             if buf_data.is_empty() {
-                return Err(Error::SerializeEmptyWriteBuffer);
+                return Err(SerializeError::EmptyWriteBuffer);
             }
             parser.restore_output(Bytes::copy_from_slice(buf_data));
         }
 
         if pos != data.len() {
-            return Err(Error::SerializeExtraneousData {
+            return Err(SerializeError::ExtraneousData {
                 remaining: data.len() - pos,
             });
         }
@@ -195,19 +195,19 @@ fn write_data(out: &mut Vec<u8>, data: &[u8]) {
     out.extend_from_slice(data);
 }
 
-fn read_u32(data: &[u8], pos: &mut usize) -> Result<u32> {
+fn read_u32(data: &[u8], pos: &mut usize) -> core::result::Result<u32, SerializeError> {
     if *pos + 4 > data.len() {
-        return Err(Error::SerializeBufferUnderrun);
+        return Err(SerializeError::BufferUnderrun);
     }
     let val = u32::from_le_bytes(data[*pos..*pos + 4].try_into().unwrap());
     *pos += 4;
     Ok(val)
 }
 
-fn read_data<'a>(data: &'a [u8], pos: &mut usize) -> Result<&'a [u8]> {
+fn read_data<'a>(data: &'a [u8], pos: &mut usize) -> core::result::Result<&'a [u8], SerializeError> {
     let len = read_u32(data, pos)? as usize;
     if *pos + len > data.len() {
-        return Err(Error::SerializeBufferUnderrun);
+        return Err(SerializeError::BufferUnderrun);
     }
     let result = &data[*pos..*pos + len];
     *pos += len;
@@ -233,6 +233,7 @@ mod tests {
             version: "test".to_string(),
             caps,
             no_hello: false,
+            max_input_buffer: None,
         }
     }
 

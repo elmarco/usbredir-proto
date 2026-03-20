@@ -17,6 +17,7 @@ fn make_connected_pair() -> (Parser<Host>, Parser<Guest>) {
         version: "bench".into(),
         caps,
         no_hello: false,
+        max_input_buffer: None,
     };
 
     let mut host = Parser::<Host>::new(config.clone());
@@ -25,8 +26,8 @@ fn make_connected_pair() -> (Parser<Host>, Parser<Guest>) {
     // Exchange hellos
     let h = drain_all(&mut host);
     let g = drain_all(&mut guest);
-    guest.feed(&h);
-    host.feed(&g);
+    guest.feed(&h).unwrap();
+    host.feed(&g).unwrap();
     while guest.poll().is_some() {}
     while host.poll().is_some() {}
 
@@ -81,7 +82,7 @@ fn bench_decode_bulk(c: &mut Criterion) {
 
     c.bench_function("decode_bulk_1k", |b| {
         b.iter(|| {
-            host.feed(black_box(&wire));
+            host.feed(black_box(&wire)).unwrap();
             while host.poll().is_some() {}
         })
     });
@@ -118,6 +119,7 @@ fn bench_roundtrip_hello(c: &mut Criterion) {
         version: "bench".into(),
         caps,
         no_hello: false,
+        max_input_buffer: None,
     };
 
     c.bench_function("roundtrip_hello", |b| {
@@ -126,7 +128,7 @@ fn bench_roundtrip_hello(c: &mut Criterion) {
             let wire = drain_all(&mut p);
 
             let mut p2 = Parser::<Guest>::new(config.clone());
-            p2.feed(black_box(&wire));
+            p2.feed(black_box(&wire)).unwrap();
             while p2.poll().is_some() {}
         })
     });

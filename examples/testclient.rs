@@ -553,31 +553,19 @@ fn handle_packet(client: &mut Client, packet: &Packet) -> Option<Vec<Packet>> {
             process::exit(0);
         }
 
-        Packet::InterfaceInfo {
-            interface_count,
-            interface,
-            interface_class,
-            interface_subclass,
-            interface_protocol,
-        } => {
+        Packet::InterfaceInfo(info) => {
             print_interface_info(
-                *interface_count,
-                interface,
-                interface_class,
-                interface_subclass,
-                interface_protocol,
+                info.interface_count,
+                &info.interface,
+                &info.interface_class,
+                &info.interface_subclass,
+                &info.interface_protocol,
             );
             None
         }
 
-        Packet::EpInfo {
-            ep_type,
-            interval,
-            interface,
-            max_packet_size,
-            ..
-        } => {
-            print_ep_info(ep_type, interval, interface, max_packet_size);
+        Packet::EpInfo(info) => {
+            print_ep_info(&info.ep_type, &info.interval, &info.interface, &info.max_packet_size);
             None
         }
 

@@ -31,29 +31,47 @@ pub enum Error {
     InvalidUtf8,
     #[error("filter data not null-terminated")]
     FilterNotNullTerminated,
-    #[error("serialization magic mismatch")]
-    SerializeBadMagic,
-    #[error("serialization length mismatch")]
-    SerializeLengthMismatch,
-    #[error("serialization caps mismatch: source has caps we don't")]
-    SerializeCapsMismatch,
-    #[error("serialization buffer underrun")]
-    SerializeBufferUnderrun,
-    #[error("serialization: empty write buffer")]
-    SerializeEmptyWriteBuffer,
-    #[error("serialization: {remaining} extraneous bytes")]
-    SerializeExtraneousData { remaining: usize },
     #[error("wrong direction packet")]
     WrongDirectionPacket,
     #[error("non-input endpoint for receiving: {endpoint}")]
     NonInputEndpoint { endpoint: Endpoint },
     #[error("peer hello not yet received — cannot send capability-dependent packets")]
     NoPeerCaps,
+    #[error("input buffer full: {current} buffered + {incoming} incoming exceeds limit {max}")]
+    InputBufferFull {
+        current: usize,
+        incoming: usize,
+        max: usize,
+    },
     #[error("filter error: {0}")]
     Filter(#[from] FilterError),
+    #[error("serialization error: {0}")]
+    Serialize(#[from] SerializeError),
     #[cfg(feature = "std")]
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+}
+
+/// Errors from serializing or unserializing parser state.
+///
+/// These are returned by [`Parser::serialize()`](crate::Parser::serialize) and
+/// [`Parser::unserialize()`](crate::Parser::unserialize), and are also wrapped
+/// in [`Error::Serialize`] for callers using the unified error type.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum SerializeError {
+    #[error("magic mismatch")]
+    BadMagic,
+    #[error("length mismatch")]
+    LengthMismatch,
+    #[error("caps mismatch: source has caps we don't")]
+    CapsMismatch,
+    #[error("buffer underrun")]
+    BufferUnderrun,
+    #[error("empty write buffer")]
+    EmptyWriteBuffer,
+    #[error("{remaining} extraneous bytes")]
+    ExtraneousData { remaining: usize },
 }
 
 /// Errors from filter rule parsing or verification.

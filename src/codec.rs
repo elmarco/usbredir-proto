@@ -54,7 +54,7 @@ impl<R: Role> Decoder for UsbredirCodec<R> {
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>> {
         if !src.is_empty() {
             let data = src.split();
-            self.parser.feed(&data);
+            self.parser.feed(&data)?;
         }
         loop {
             match self.parser.poll() {

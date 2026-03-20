@@ -21,16 +21,17 @@ fuzz_target!(|data: &[u8]| {
         version: "fuzz".into(),
         caps,
         no_hello: true,
+        max_input_buffer: None,
     };
 
     // Host parser
     let mut parser = Parser::<Host>::new(config.clone());
-    parser.feed(data);
+    let _ = parser.feed(data);
     while parser.poll().is_some() {}
 
     // Guest parser
     let mut parser = Parser::<Guest>::new(config);
-    parser.feed(data);
+    let _ = parser.feed(data);
     while parser.poll().is_some() {}
 
     // Also test with minimal caps (32-bit ids, no compat features)
@@ -38,7 +39,8 @@ fuzz_target!(|data: &[u8]| {
         version: "fuzz".into(),
         caps: Caps::new(),
         no_hello: true,
+        max_input_buffer: None,
     });
-    parser.feed(data);
+    let _ = parser.feed(data);
     while parser.poll().is_some() {}
 });

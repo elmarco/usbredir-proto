@@ -80,6 +80,12 @@ pub struct ParserConfig {
     /// If true, suppress the automatic Hello packet on construction.
     /// Useful when restoring a parser from serialized state.
     pub no_hello: bool,
+    /// Maximum number of bytes allowed in the input buffer before `feed()`
+    /// returns an error. `None` means unlimited (default).
+    ///
+    /// This protects against a malicious peer sending headers that claim
+    /// very large bodies (up to ~128 MiB), causing unbounded memory growth.
+    pub max_input_buffer: Option<usize>,
 }
 
 impl Default for ParserConfig {
@@ -88,6 +94,7 @@ impl Default for ParserConfig {
             version: String::new(),
             caps: Caps::new(),
             no_hello: false,
+            max_input_buffer: None,
         }
     }
 }
@@ -121,6 +128,16 @@ impl ParserConfig {
     #[must_use]
     pub fn no_hello(mut self, no_hello: bool) -> Self {
         self.no_hello = no_hello;
+        self
+    }
+
+    /// Set the maximum input buffer size (in bytes).
+    ///
+    /// If set, [`Parser::feed()`] will return an error when the input buffer
+    /// would exceed this limit. `None` means unlimited (default).
+    #[must_use]
+    pub fn max_input_buffer(mut self, max: usize) -> Self {
+        self.max_input_buffer = Some(max);
         self
     }
 }
@@ -165,6 +182,7 @@ pub struct Parser<R: Role> {
 
     // Input buffer
     input: BytesMut,
+    max_input_buffer: Option<usize>,
 
     // Parse state
     state: ParseState,
@@ -209,6 +227,7 @@ impl<R: Role> Parser<R> {
             our_caps,
             peer_caps: None,
             input: BytesMut::new(),
+            max_input_buffer: config.max_input_buffer,
             state: ParseState::Header,
             to_skip: 0,
             events: VecDeque::new(),
@@ -499,9 +518,23 @@ impl<R: Role> Parser<R> {
 
     /// Push received bytes into the parser. Decoded packets become available
     /// via [`poll()`](Self::poll) or [`events()`](Self::events).
-    pub fn feed(&mut self, data: &[u8]) {
+    ///
+    /// Returns an error if the input buffer would exceed the configured
+    /// [`max_input_buffer`](ParserConfig::max_input_buffer) limit. In that case
+    /// no bytes are consumed.
+    pub fn feed(&mut self, data: &[u8]) -> Result<()> {
+        if let Some(max) = self.max_input_buffer {
+            if self.input.len() + data.len() > max {
+                return Err(Error::InputBufferFull {
+                    current: self.input.len(),
+                    incoming: data.len(),
+                    max,
+                });
+            }
+        }
         self.input.extend_from_slice(data);
         self.do_parse();
+        Ok(())
     }
 
     /// Pull the next decoded event, or `None` if the queue is empty.
@@ -694,11 +727,9 @@ impl<R: Role> Parser<R> {
         }
 
         match packet {
-            Packet::InterfaceInfo {
-                interface_count, ..
-            } => {
-                if *interface_count > 32 {
-                    return Err(Error::InterfaceCountTooLarge(*interface_count));
+            Packet::InterfaceInfo(info) => {
+                if info.interface_count > 32 {
+                    return Err(Error::InterfaceCountTooLarge(info.interface_count));
                 }
             }
             Packet::FilterReject | Packet::FilterFilter { .. } => {
@@ -942,13 +973,13 @@ impl<R: Role> Parser<R> {
             PktType::InterfaceInfo => {
                 let hdr =
                     wire::InterfaceInfoHeader::read_from_bytes(type_header).map_err(wire_err!())?;
-                Ok(Packet::InterfaceInfo {
+                Ok(Packet::InterfaceInfo(Box::new(crate::packet::InterfaceInfoData {
                     interface_count: hdr.interface_count.get(),
                     interface: hdr.interface,
                     interface_class: hdr.interface_class,
                     interface_subclass: hdr.interface_subclass,
                     interface_protocol: hdr.interface_protocol,
-                })
+                })))
             }
             PktType::EpInfo => {
                 let mut ep_type = [TransferType::Invalid; 32];
@@ -989,13 +1020,13 @@ impl<R: Role> Parser<R> {
                     }
                 }
 
-                Ok(Packet::EpInfo {
+                Ok(Packet::EpInfo(Box::new(crate::packet::EpInfoData {
                     ep_type,
                     interval,
                     interface,
                     max_packet_size,
                     max_streams,
-                })
+                })))
             }
             PktType::SetConfiguration => {
                 let hdr = wire::SetConfigurationHeader::read_from_bytes(type_header)
@@ -1331,28 +1362,23 @@ impl<R: Role> Parser<R> {
                 }
             }
             Packet::DeviceDisconnect => {}
-            Packet::InterfaceInfo {
-                interface_count,
-                interface,
-                interface_class,
-                interface_subclass,
-                interface_protocol,
-            } => {
+            Packet::InterfaceInfo(info) => {
                 write_hdr!(wire::InterfaceInfoHeader {
-                    interface_count: (*interface_count).into(),
-                    interface: *interface,
-                    interface_class: *interface_class,
-                    interface_subclass: *interface_subclass,
-                    interface_protocol: *interface_protocol,
+                    interface_count: info.interface_count.into(),
+                    interface: info.interface,
+                    interface_class: info.interface_class,
+                    interface_subclass: info.interface_subclass,
+                    interface_protocol: info.interface_protocol,
                 });
             }
-            Packet::EpInfo {
-                ep_type,
-                interval,
-                interface,
-                max_packet_size,
-                max_streams,
-            } => {
+            Packet::EpInfo(info) => {
+                let crate::packet::EpInfoData {
+                    ep_type,
+                    interval,
+                    interface,
+                    max_packet_size,
+                    max_streams,
+                } = info.as_ref();
                 if self.negotiated(Cap::BulkStreams) {
                     let mut hdr = wire::EpInfoHeader {
                         ep_type: [0; 32],
@@ -1698,6 +1724,7 @@ mod tests {
             version: "test-0.1".to_string(),
             caps,
             no_hello: false,
+            max_input_buffer: None,
         }
     }
 
@@ -1710,7 +1737,7 @@ mod tests {
         let host_hello = host.drain().unwrap();
 
         // Guest feeds it
-        guest.feed(&host_hello);
+        guest.feed(&host_hello).unwrap();
 
         // Guest should emit a Log (peer info) + the hello Packet
         let mut got_hello = false;
@@ -1735,7 +1762,7 @@ mod tests {
 
         // Feed one byte at a time
         for byte in host_hello.iter() {
-            guest.feed(&[*byte]);
+            guest.feed(&[*byte]).unwrap();
         }
 
         let mut got_hello = false;
@@ -1758,8 +1785,8 @@ mod tests {
         let host_hello = host.drain().unwrap();
         let guest_hello = guest.drain().unwrap();
 
-        guest.feed(&host_hello);
-        host.feed(&guest_hello);
+        guest.feed(&host_hello).unwrap();
+        host.feed(&guest_hello).unwrap();
 
         // Drain events
         while guest.poll().is_some() {}
@@ -1772,7 +1799,7 @@ mod tests {
             .unwrap();
 
         let pkt_bytes = guest.drain().unwrap();
-        host.feed(&pkt_bytes);
+        host.feed(&pkt_bytes).unwrap();
 
         let mut found = false;
         while let Some(event) = host.poll() {
