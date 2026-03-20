@@ -27,6 +27,10 @@ proptest = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "io-std", "macros", "time"] }
 futures = "0.3"
 
+[[example]]
+name = "testclient"
+required-features = ["tokio"]
+
 [[bench]]
 name = "codec"
 harness = false
