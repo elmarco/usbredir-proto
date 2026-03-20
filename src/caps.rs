@@ -77,6 +77,12 @@ impl Caps {
         self.has(cap) && peer.has(cap)
     }
 
+    /// Decode capabilities from little-endian wire bytes.
+    ///
+    /// Unknown/unrecognized bits are silently preserved for forward compatibility
+    /// — a newer peer may advertise capabilities this version doesn't know about.
+    /// They are stored in the bitset and will be included when re-serialized, but
+    /// `negotiated()` will never activate them since our side won't set them.
     #[must_use]
     pub fn from_le_bytes(data: &[u8]) -> Self {
         let mut caps = Self::default();
