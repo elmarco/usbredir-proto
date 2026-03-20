@@ -250,10 +250,9 @@ async fn main() {
                                 }
                             }
                         }
-                        if client.phase == Phase::Interactive {
-                            if !drain_pending(&mut client, &mut framed, &mut pending_commands, stdin_eof).await {
-                                return;
-                            }
+                        if client.phase == Phase::Interactive
+                            && !drain_pending(&mut client, &mut framed, &mut pending_commands, stdin_eof).await {
+                            return;
                         }
                     }
                     Some(Err(e)) => {
