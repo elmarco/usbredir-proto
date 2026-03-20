@@ -6,43 +6,124 @@ pub const MAX_BULK_TRANSFER_SIZE: u32 = 128 * 1024 * 1024;
 pub const MAX_PACKET_SIZE: u32 = 1024 + MAX_BULK_TRANSFER_SIZE;
 
 /// Wire packet type IDs matching the C `usb_redir_type` enum.
-pub mod pkt_type {
-    // Control packets
-    pub const HELLO: u32 = 0;
-    pub const DEVICE_CONNECT: u32 = 1;
-    pub const DEVICE_DISCONNECT: u32 = 2;
-    pub const RESET: u32 = 3;
-    pub const INTERFACE_INFO: u32 = 4;
-    pub const EP_INFO: u32 = 5;
-    pub const SET_CONFIGURATION: u32 = 6;
-    pub const GET_CONFIGURATION: u32 = 7;
-    pub const CONFIGURATION_STATUS: u32 = 8;
-    pub const SET_ALT_SETTING: u32 = 9;
-    pub const GET_ALT_SETTING: u32 = 10;
-    pub const ALT_SETTING_STATUS: u32 = 11;
-    pub const START_ISO_STREAM: u32 = 12;
-    pub const STOP_ISO_STREAM: u32 = 13;
-    pub const ISO_STREAM_STATUS: u32 = 14;
-    pub const START_INTERRUPT_RECEIVING: u32 = 15;
-    pub const STOP_INTERRUPT_RECEIVING: u32 = 16;
-    pub const INTERRUPT_RECEIVING_STATUS: u32 = 17;
-    pub const ALLOC_BULK_STREAMS: u32 = 18;
-    pub const FREE_BULK_STREAMS: u32 = 19;
-    pub const BULK_STREAMS_STATUS: u32 = 20;
-    pub const CANCEL_DATA_PACKET: u32 = 21;
-    pub const FILTER_REJECT: u32 = 22;
-    pub const FILTER_FILTER: u32 = 23;
-    pub const DEVICE_DISCONNECT_ACK: u32 = 24;
-    pub const START_BULK_RECEIVING: u32 = 25;
-    pub const STOP_BULK_RECEIVING: u32 = 26;
-    pub const BULK_RECEIVING_STATUS: u32 = 27;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u32)]
+pub enum PktType {
+    Hello = 0,
+    DeviceConnect = 1,
+    DeviceDisconnect = 2,
+    Reset = 3,
+    InterfaceInfo = 4,
+    EpInfo = 5,
+    SetConfiguration = 6,
+    GetConfiguration = 7,
+    ConfigurationStatus = 8,
+    SetAltSetting = 9,
+    GetAltSetting = 10,
+    AltSettingStatus = 11,
+    StartIsoStream = 12,
+    StopIsoStream = 13,
+    IsoStreamStatus = 14,
+    StartInterruptReceiving = 15,
+    StopInterruptReceiving = 16,
+    InterruptReceivingStatus = 17,
+    AllocBulkStreams = 18,
+    FreeBulkStreams = 19,
+    BulkStreamsStatus = 20,
+    CancelDataPacket = 21,
+    FilterReject = 22,
+    FilterFilter = 23,
+    DeviceDisconnectAck = 24,
+    StartBulkReceiving = 25,
+    StopBulkReceiving = 26,
+    BulkReceivingStatus = 27,
+    ControlPacket = 100,
+    BulkPacket = 101,
+    IsoPacket = 102,
+    InterruptPacket = 103,
+    BufferedBulkPacket = 104,
+}
 
-    // Data packets
-    pub const CONTROL_PACKET: u32 = 100;
-    pub const BULK_PACKET: u32 = 101;
-    pub const ISO_PACKET: u32 = 102;
-    pub const INTERRUPT_PACKET: u32 = 103;
-    pub const BUFFERED_BULK_PACKET: u32 = 104;
+impl TryFrom<u32> for PktType {
+    type Error = u32;
+
+    fn try_from(v: u32) -> core::result::Result<Self, u32> {
+        match v {
+            0 => Ok(Self::Hello),
+            1 => Ok(Self::DeviceConnect),
+            2 => Ok(Self::DeviceDisconnect),
+            3 => Ok(Self::Reset),
+            4 => Ok(Self::InterfaceInfo),
+            5 => Ok(Self::EpInfo),
+            6 => Ok(Self::SetConfiguration),
+            7 => Ok(Self::GetConfiguration),
+            8 => Ok(Self::ConfigurationStatus),
+            9 => Ok(Self::SetAltSetting),
+            10 => Ok(Self::GetAltSetting),
+            11 => Ok(Self::AltSettingStatus),
+            12 => Ok(Self::StartIsoStream),
+            13 => Ok(Self::StopIsoStream),
+            14 => Ok(Self::IsoStreamStatus),
+            15 => Ok(Self::StartInterruptReceiving),
+            16 => Ok(Self::StopInterruptReceiving),
+            17 => Ok(Self::InterruptReceivingStatus),
+            18 => Ok(Self::AllocBulkStreams),
+            19 => Ok(Self::FreeBulkStreams),
+            20 => Ok(Self::BulkStreamsStatus),
+            21 => Ok(Self::CancelDataPacket),
+            22 => Ok(Self::FilterReject),
+            23 => Ok(Self::FilterFilter),
+            24 => Ok(Self::DeviceDisconnectAck),
+            25 => Ok(Self::StartBulkReceiving),
+            26 => Ok(Self::StopBulkReceiving),
+            27 => Ok(Self::BulkReceivingStatus),
+            100 => Ok(Self::ControlPacket),
+            101 => Ok(Self::BulkPacket),
+            102 => Ok(Self::IsoPacket),
+            103 => Ok(Self::InterruptPacket),
+            104 => Ok(Self::BufferedBulkPacket),
+            _ => Err(v),
+        }
+    }
+}
+
+/// Backward-compatible module re-exporting packet type IDs as constants.
+pub mod pkt_type {
+    use super::PktType;
+
+    pub const HELLO: u32 = PktType::Hello as u32;
+    pub const DEVICE_CONNECT: u32 = PktType::DeviceConnect as u32;
+    pub const DEVICE_DISCONNECT: u32 = PktType::DeviceDisconnect as u32;
+    pub const RESET: u32 = PktType::Reset as u32;
+    pub const INTERFACE_INFO: u32 = PktType::InterfaceInfo as u32;
+    pub const EP_INFO: u32 = PktType::EpInfo as u32;
+    pub const SET_CONFIGURATION: u32 = PktType::SetConfiguration as u32;
+    pub const GET_CONFIGURATION: u32 = PktType::GetConfiguration as u32;
+    pub const CONFIGURATION_STATUS: u32 = PktType::ConfigurationStatus as u32;
+    pub const SET_ALT_SETTING: u32 = PktType::SetAltSetting as u32;
+    pub const GET_ALT_SETTING: u32 = PktType::GetAltSetting as u32;
+    pub const ALT_SETTING_STATUS: u32 = PktType::AltSettingStatus as u32;
+    pub const START_ISO_STREAM: u32 = PktType::StartIsoStream as u32;
+    pub const STOP_ISO_STREAM: u32 = PktType::StopIsoStream as u32;
+    pub const ISO_STREAM_STATUS: u32 = PktType::IsoStreamStatus as u32;
+    pub const START_INTERRUPT_RECEIVING: u32 = PktType::StartInterruptReceiving as u32;
+    pub const STOP_INTERRUPT_RECEIVING: u32 = PktType::StopInterruptReceiving as u32;
+    pub const INTERRUPT_RECEIVING_STATUS: u32 = PktType::InterruptReceivingStatus as u32;
+    pub const ALLOC_BULK_STREAMS: u32 = PktType::AllocBulkStreams as u32;
+    pub const FREE_BULK_STREAMS: u32 = PktType::FreeBulkStreams as u32;
+    pub const BULK_STREAMS_STATUS: u32 = PktType::BulkStreamsStatus as u32;
+    pub const CANCEL_DATA_PACKET: u32 = PktType::CancelDataPacket as u32;
+    pub const FILTER_REJECT: u32 = PktType::FilterReject as u32;
+    pub const FILTER_FILTER: u32 = PktType::FilterFilter as u32;
+    pub const DEVICE_DISCONNECT_ACK: u32 = PktType::DeviceDisconnectAck as u32;
+    pub const START_BULK_RECEIVING: u32 = PktType::StartBulkReceiving as u32;
+    pub const STOP_BULK_RECEIVING: u32 = PktType::StopBulkReceiving as u32;
+    pub const BULK_RECEIVING_STATUS: u32 = PktType::BulkReceivingStatus as u32;
+    pub const CONTROL_PACKET: u32 = PktType::ControlPacket as u32;
+    pub const BULK_PACKET: u32 = PktType::BulkPacket as u32;
+    pub const ISO_PACKET: u32 = PktType::IsoPacket as u32;
+    pub const INTERRUPT_PACKET: u32 = PktType::InterruptPacket as u32;
+    pub const BUFFERED_BULK_PACKET: u32 = PktType::BufferedBulkPacket as u32;
 }
 
 /// USB transfer completion status (maps to `libusb_transfer_status`).
