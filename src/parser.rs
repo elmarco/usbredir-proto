@@ -10,8 +10,7 @@ use crate::caps::{Cap, Caps};
 use crate::error::{Error, Result};
 use crate::filter;
 use crate::packet::Packet;
-use crate::proto::pkt_type;
-use crate::proto::{Endpoint, Speed, Status, TransferType, MAX_PACKET_SIZE};
+use crate::proto::{Endpoint, PktType, Speed, Status, TransferType, MAX_PACKET_SIZE};
 use crate::wire;
 
 mod sealed {
@@ -138,7 +137,7 @@ pub type Event = Result<Box<Packet>>;
 pub(crate) enum ParseState {
     Header,
     Body {
-        pkt_type: u32,
+        pkt_type: PktType,
         pkt_length: u32,
         pkt_id: u64,
         type_header_len: usize,
@@ -259,15 +258,15 @@ impl<R: Role> Parser<R> {
             .is_some_and(|p| self.our_caps.negotiated(&p, cap))
     }
 
-    fn get_type_header_len(&self, pkt_type: u32, sending: bool) -> Result<usize> {
+    fn get_type_header_len(&self, pkt_type: PktType, sending: bool) -> Result<usize> {
         let mut command_for_host = R::IS_HOST;
         if sending {
             command_for_host = !command_for_host;
         }
 
         let len = match pkt_type {
-            pkt_type::HELLO => core::mem::size_of::<wire::HelloHeader>(),
-            pkt_type::DEVICE_CONNECT => {
+            PktType::Hello => core::mem::size_of::<wire::HelloHeader>(),
+            PktType::DeviceConnect => {
                 if !command_for_host {
                     if self.negotiated(Cap::ConnectDeviceVersion) {
                         core::mem::size_of::<wire::DeviceConnectHeader>()
@@ -278,28 +277,28 @@ impl<R: Role> Parser<R> {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            pkt_type::DEVICE_DISCONNECT => {
+            PktType::DeviceDisconnect => {
                 if !command_for_host {
                     0
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            pkt_type::RESET => {
+            PktType::Reset => {
                 if command_for_host {
                     0
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            pkt_type::INTERFACE_INFO => {
+            PktType::InterfaceInfo => {
                 if !command_for_host {
                     core::mem::size_of::<wire::InterfaceInfoHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            pkt_type::EP_INFO => {
+            PktType::EpInfo => {
                 if !command_for_host {
                     if self.negotiated(Cap::BulkStreams) {
                         core::mem::size_of::<wire::EpInfoHeader>()
@@ -312,187 +311,186 @@ impl<R: Role> Parser<R> {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            pkt_type::SET_CONFIGURATION => {
+            PktType::SetConfiguration => {
                 if command_for_host {
                     core::mem::size_of::<wire::SetConfigurationHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            pkt_type::GET_CONFIGURATION => {
+            PktType::GetConfiguration => {
                 if command_for_host {
                     0
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            pkt_type::CONFIGURATION_STATUS => {
+            PktType::ConfigurationStatus => {
                 if !command_for_host {
                     core::mem::size_of::<wire::ConfigurationStatusHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            pkt_type::SET_ALT_SETTING => {
+            PktType::SetAltSetting => {
                 if command_for_host {
                     core::mem::size_of::<wire::SetAltSettingHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            pkt_type::GET_ALT_SETTING => {
+            PktType::GetAltSetting => {
                 if command_for_host {
                     core::mem::size_of::<wire::GetAltSettingHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            pkt_type::ALT_SETTING_STATUS => {
+            PktType::AltSettingStatus => {
                 if !command_for_host {
                     core::mem::size_of::<wire::AltSettingStatusHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            pkt_type::START_ISO_STREAM => {
+            PktType::StartIsoStream => {
                 if command_for_host {
                     core::mem::size_of::<wire::StartIsoStreamHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            pkt_type::STOP_ISO_STREAM => {
+            PktType::StopIsoStream => {
                 if command_for_host {
                     core::mem::size_of::<wire::StopIsoStreamHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            pkt_type::ISO_STREAM_STATUS => {
+            PktType::IsoStreamStatus => {
                 if !command_for_host {
                     core::mem::size_of::<wire::IsoStreamStatusHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            pkt_type::START_INTERRUPT_RECEIVING => {
+            PktType::StartInterruptReceiving => {
                 if command_for_host {
                     core::mem::size_of::<wire::StartInterruptReceivingHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            pkt_type::STOP_INTERRUPT_RECEIVING => {
+            PktType::StopInterruptReceiving => {
                 if command_for_host {
                     core::mem::size_of::<wire::StopInterruptReceivingHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            pkt_type::INTERRUPT_RECEIVING_STATUS => {
+            PktType::InterruptReceivingStatus => {
                 if !command_for_host {
                     core::mem::size_of::<wire::InterruptReceivingStatusHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            pkt_type::ALLOC_BULK_STREAMS => {
+            PktType::AllocBulkStreams => {
                 if command_for_host {
                     core::mem::size_of::<wire::AllocBulkStreamsHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            pkt_type::FREE_BULK_STREAMS => {
+            PktType::FreeBulkStreams => {
                 if command_for_host {
                     core::mem::size_of::<wire::FreeBulkStreamsHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            pkt_type::BULK_STREAMS_STATUS => {
+            PktType::BulkStreamsStatus => {
                 if !command_for_host {
                     core::mem::size_of::<wire::BulkStreamsStatusHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            pkt_type::CANCEL_DATA_PACKET => {
+            PktType::CancelDataPacket => {
                 if command_for_host {
                     0
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            pkt_type::FILTER_REJECT => {
+            PktType::FilterReject => {
                 if command_for_host {
                     0
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            pkt_type::FILTER_FILTER => 0,
-            pkt_type::DEVICE_DISCONNECT_ACK => {
+            PktType::FilterFilter => 0,
+            PktType::DeviceDisconnectAck => {
                 if command_for_host {
                     0
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            pkt_type::START_BULK_RECEIVING => {
+            PktType::StartBulkReceiving => {
                 if command_for_host {
                     core::mem::size_of::<wire::StartBulkReceivingHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            pkt_type::STOP_BULK_RECEIVING => {
+            PktType::StopBulkReceiving => {
                 if command_for_host {
                     core::mem::size_of::<wire::StopBulkReceivingHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            pkt_type::BULK_RECEIVING_STATUS => {
+            PktType::BulkReceivingStatus => {
                 if !command_for_host {
                     core::mem::size_of::<wire::BulkReceivingStatusHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            pkt_type::CONTROL_PACKET => core::mem::size_of::<wire::ControlPacketHeader>(),
-            pkt_type::BULK_PACKET => {
+            PktType::ControlPacket => core::mem::size_of::<wire::ControlPacketHeader>(),
+            PktType::BulkPacket => {
                 if self.negotiated(Cap::BulkLength32Bits) {
                     core::mem::size_of::<wire::BulkPacketHeader>()
                 } else {
                     core::mem::size_of::<wire::BulkPacketHeader16BitLength>()
                 }
             }
-            pkt_type::ISO_PACKET => core::mem::size_of::<wire::IsoPacketHeader>(),
-            pkt_type::INTERRUPT_PACKET => core::mem::size_of::<wire::InterruptPacketHeader>(),
-            pkt_type::BUFFERED_BULK_PACKET => {
+            PktType::IsoPacket => core::mem::size_of::<wire::IsoPacketHeader>(),
+            PktType::InterruptPacket => core::mem::size_of::<wire::InterruptPacketHeader>(),
+            PktType::BufferedBulkPacket => {
                 if !command_for_host {
                     core::mem::size_of::<wire::BufferedBulkPacketHeader>()
                 } else {
                     return Err(Error::WrongDirectionPacket);
                 }
             }
-            _ => return Err(Error::UnknownPacketType(pkt_type)),
         };
 
         Ok(len)
     }
 
-    fn expects_extra_data(pkt_type: u32) -> bool {
+    fn expects_extra_data(pkt_type: PktType) -> bool {
         matches!(
             pkt_type,
-            pkt_type::HELLO
-                | pkt_type::FILTER_FILTER
-                | pkt_type::CONTROL_PACKET
-                | pkt_type::BULK_PACKET
-                | pkt_type::ISO_PACKET
-                | pkt_type::INTERRUPT_PACKET
-                | pkt_type::BUFFERED_BULK_PACKET
+            PktType::Hello
+                | PktType::FilterFilter
+                | PktType::ControlPacket
+                | PktType::BulkPacket
+                | PktType::IsoPacket
+                | PktType::InterruptPacket
+                | PktType::BufferedBulkPacket
         )
     }
 
@@ -550,20 +548,32 @@ impl<R: Role> Parser<R> {
                     }
 
                     // Parse header
-                    let (pkt_type, pkt_length, pkt_id);
+                    let (pkt_type_raw, pkt_length, pkt_id);
                     if self.using_32bit_ids() {
                         let hdr = wire::Header32::read_from_bytes(&self.input[..hlen]).unwrap();
-                        pkt_type = hdr.type_.get();
+                        pkt_type_raw = hdr.type_.get();
                         pkt_length = hdr.length.get();
                         pkt_id = hdr.id.get() as u64;
                     } else {
                         let hdr = wire::Header::read_from_bytes(&self.input[..hlen]).unwrap();
-                        pkt_type = hdr.type_.get();
+                        pkt_type_raw = hdr.type_.get();
                         pkt_length = hdr.length.get();
                         pkt_id = hdr.id.get();
                     }
 
-                    // Validate type
+                    // Convert wire u32 to PktType
+                    let pkt_type = match PktType::try_from(pkt_type_raw) {
+                        Ok(t) => t,
+                        Err(_) => {
+                            let _ = self.input.split_to(hlen);
+                            self.to_skip = pkt_length as usize;
+                            self.events
+                                .push_back(Err(Error::UnknownPacketType(pkt_type_raw)));
+                            continue;
+                        }
+                    };
+
+                    // Validate type (direction check)
                     let type_header_len = match self.get_type_header_len(pkt_type, false) {
                         Ok(len) => len,
                         Err(e) => {
@@ -821,7 +831,7 @@ impl<R: Role> Parser<R> {
         command_for_host: bool,
         header_length: usize,
         data_len: usize,
-        pkt_type: u32,
+        pkt_type: PktType,
     ) -> Result<()> {
         let expect_data = (endpoint.is_input() && !command_for_host)
             || (endpoint.is_output() && command_for_host);
@@ -841,19 +851,19 @@ impl<R: Role> Parser<R> {
             }
             // Some types unconditionally reject wrong-direction
             match pkt_type {
-                pkt_type::ISO_PACKET => {
+                PktType::IsoPacket => {
                     return Err(Error::WrongDirection {
                         endpoint: *endpoint,
                     });
                 }
-                pkt_type::INTERRUPT_PACKET => {
+                PktType::InterruptPacket => {
                     if command_for_host {
                         return Err(Error::WrongDirection {
                             endpoint: *endpoint,
                         });
                     }
                 }
-                pkt_type::BUFFERED_BULK_PACKET => {
+                PktType::BufferedBulkPacket => {
                     return Err(Error::WrongDirection {
                         endpoint: *endpoint,
                     });
@@ -866,7 +876,7 @@ impl<R: Role> Parser<R> {
 
     fn decode_packet(
         &self,
-        pkt_type: u32,
+        pkt_type: PktType,
         id: u64,
         type_header: &[u8],
         data: Bytes,
@@ -880,7 +890,7 @@ impl<R: Role> Parser<R> {
         }
 
         match pkt_type {
-            pkt_type::HELLO => {
+            PktType::Hello => {
                 let hdr = wire::HelloHeader::read_from_bytes(type_header).map_err(wire_err!())?;
                 let version_bytes = &hdr.version;
                 let version = core::str::from_utf8(version_bytes)
@@ -890,7 +900,7 @@ impl<R: Role> Parser<R> {
                 let caps = Caps::from_le_bytes(&data);
                 Ok(Packet::Hello { version, caps })
             }
-            pkt_type::DEVICE_CONNECT => {
+            PktType::DeviceConnect => {
                 if self.negotiated(Cap::ConnectDeviceVersion) {
                     let hdr = wire::DeviceConnectHeader::read_from_bytes(type_header)
                         .map_err(wire_err!())?;
@@ -917,12 +927,12 @@ impl<R: Role> Parser<R> {
                     })
                 }
             }
-            pkt_type::DEVICE_DISCONNECT => Ok(Packet::DeviceDisconnect),
-            pkt_type::RESET => Ok(Packet::Request(crate::packet::RequestPacket {
+            PktType::DeviceDisconnect => Ok(Packet::DeviceDisconnect),
+            PktType::Reset => Ok(Packet::Request(crate::packet::RequestPacket {
                 id,
                 kind: crate::packet::RequestKind::Reset,
             })),
-            pkt_type::INTERFACE_INFO => {
+            PktType::InterfaceInfo => {
                 let hdr =
                     wire::InterfaceInfoHeader::read_from_bytes(type_header).map_err(wire_err!())?;
                 Ok(Packet::InterfaceInfo {
@@ -933,7 +943,7 @@ impl<R: Role> Parser<R> {
                     interface_protocol: hdr.interface_protocol,
                 })
             }
-            pkt_type::EP_INFO => {
+            PktType::EpInfo => {
                 let mut ep_type = [TransferType::Invalid; 32];
                 let mut interval = [0u8; 32];
                 let mut interface = [0u8; 32];
@@ -980,13 +990,13 @@ impl<R: Role> Parser<R> {
                     max_streams,
                 })
             }
-            pkt_type::SET_CONFIGURATION => {
+            PktType::SetConfiguration => {
                 let hdr = wire::SetConfigurationHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
                 Ok(Packet::set_configuration(id, hdr.configuration))
             }
-            pkt_type::GET_CONFIGURATION => Ok(Packet::get_configuration(id)),
-            pkt_type::CONFIGURATION_STATUS => {
+            PktType::GetConfiguration => Ok(Packet::get_configuration(id)),
+            PktType::ConfigurationStatus => {
                 let hdr = wire::ConfigurationStatusHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
                 Ok(Packet::configuration_status(
@@ -995,17 +1005,17 @@ impl<R: Role> Parser<R> {
                     hdr.configuration,
                 ))
             }
-            pkt_type::SET_ALT_SETTING => {
+            PktType::SetAltSetting => {
                 let hdr =
                     wire::SetAltSettingHeader::read_from_bytes(type_header).map_err(wire_err!())?;
                 Ok(Packet::set_alt_setting(id, hdr.interface, hdr.alt))
             }
-            pkt_type::GET_ALT_SETTING => {
+            PktType::GetAltSetting => {
                 let hdr =
                     wire::GetAltSettingHeader::read_from_bytes(type_header).map_err(wire_err!())?;
                 Ok(Packet::get_alt_setting(id, hdr.interface))
             }
-            pkt_type::ALT_SETTING_STATUS => {
+            PktType::AltSettingStatus => {
                 let hdr = wire::AltSettingStatusHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
                 Ok(Packet::alt_setting_status(
@@ -1015,7 +1025,7 @@ impl<R: Role> Parser<R> {
                     hdr.alt,
                 ))
             }
-            pkt_type::START_ISO_STREAM => {
+            PktType::StartIsoStream => {
                 let hdr = wire::StartIsoStreamHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
                 Ok(Packet::start_iso_stream(
@@ -1025,12 +1035,12 @@ impl<R: Role> Parser<R> {
                     hdr.no_urbs,
                 ))
             }
-            pkt_type::STOP_ISO_STREAM => {
+            PktType::StopIsoStream => {
                 let hdr =
                     wire::StopIsoStreamHeader::read_from_bytes(type_header).map_err(wire_err!())?;
                 Ok(Packet::stop_iso_stream(id, Endpoint::new(hdr.endpoint)))
             }
-            pkt_type::ISO_STREAM_STATUS => {
+            PktType::IsoStreamStatus => {
                 let hdr = wire::IsoStreamStatusHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
                 Ok(Packet::iso_stream_status(
@@ -1039,7 +1049,7 @@ impl<R: Role> Parser<R> {
                     Endpoint::new(hdr.endpoint),
                 ))
             }
-            pkt_type::START_INTERRUPT_RECEIVING => {
+            PktType::StartInterruptReceiving => {
                 let hdr = wire::StartInterruptReceivingHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
                 Ok(Packet::start_interrupt_receiving(
@@ -1047,7 +1057,7 @@ impl<R: Role> Parser<R> {
                     Endpoint::new(hdr.endpoint),
                 ))
             }
-            pkt_type::STOP_INTERRUPT_RECEIVING => {
+            PktType::StopInterruptReceiving => {
                 let hdr = wire::StopInterruptReceivingHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
                 Ok(Packet::stop_interrupt_receiving(
@@ -1055,7 +1065,7 @@ impl<R: Role> Parser<R> {
                     Endpoint::new(hdr.endpoint),
                 ))
             }
-            pkt_type::INTERRUPT_RECEIVING_STATUS => {
+            PktType::InterruptReceivingStatus => {
                 let hdr = wire::InterruptReceivingStatusHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
                 Ok(Packet::interrupt_receiving_status(
@@ -1064,7 +1074,7 @@ impl<R: Role> Parser<R> {
                     Endpoint::new(hdr.endpoint),
                 ))
             }
-            pkt_type::ALLOC_BULK_STREAMS => {
+            PktType::AllocBulkStreams => {
                 let hdr = wire::AllocBulkStreamsHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
                 Ok(Packet::alloc_bulk_streams(
@@ -1073,12 +1083,12 @@ impl<R: Role> Parser<R> {
                     hdr.no_streams.get(),
                 ))
             }
-            pkt_type::FREE_BULK_STREAMS => {
+            PktType::FreeBulkStreams => {
                 let hdr = wire::FreeBulkStreamsHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
                 Ok(Packet::free_bulk_streams(id, hdr.endpoints.get()))
             }
-            pkt_type::BULK_STREAMS_STATUS => {
+            PktType::BulkStreamsStatus => {
                 let hdr = wire::BulkStreamsStatusHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
                 Ok(Packet::bulk_streams_status(
@@ -1088,9 +1098,9 @@ impl<R: Role> Parser<R> {
                     Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
                 ))
             }
-            pkt_type::CANCEL_DATA_PACKET => Ok(Packet::cancel_data_packet(id)),
-            pkt_type::FILTER_REJECT => Ok(Packet::FilterReject),
-            pkt_type::FILTER_FILTER => {
+            PktType::CancelDataPacket => Ok(Packet::cancel_data_packet(id)),
+            PktType::FilterReject => Ok(Packet::FilterReject),
+            PktType::FilterFilter => {
                 // Data is a null-terminated string of filter rules
                 let s = if !data.is_empty() && data[data.len() - 1] == 0 {
                     core::str::from_utf8(&data[..data.len() - 1]).map_err(|_| Error::InvalidUtf8)?
@@ -1100,8 +1110,8 @@ impl<R: Role> Parser<R> {
                 let rules = filter::parse_rules(s, ",", "|")?;
                 Ok(Packet::FilterFilter { rules })
             }
-            pkt_type::DEVICE_DISCONNECT_ACK => Ok(Packet::DeviceDisconnectAck),
-            pkt_type::START_BULK_RECEIVING => {
+            PktType::DeviceDisconnectAck => Ok(Packet::DeviceDisconnectAck),
+            PktType::StartBulkReceiving => {
                 let hdr = wire::StartBulkReceivingHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
                 Ok(Packet::start_bulk_receiving(
@@ -1112,7 +1122,7 @@ impl<R: Role> Parser<R> {
                     hdr.no_transfers,
                 ))
             }
-            pkt_type::STOP_BULK_RECEIVING => {
+            PktType::StopBulkReceiving => {
                 let hdr = wire::StopBulkReceivingHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
                 Ok(Packet::stop_bulk_receiving(
@@ -1121,7 +1131,7 @@ impl<R: Role> Parser<R> {
                     Endpoint::new(hdr.endpoint),
                 ))
             }
-            pkt_type::BULK_RECEIVING_STATUS => {
+            PktType::BulkReceivingStatus => {
                 let hdr = wire::BulkReceivingStatusHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
                 Ok(Packet::bulk_receiving_status(
@@ -1131,7 +1141,7 @@ impl<R: Role> Parser<R> {
                     Status::try_from(hdr.status).map_err(Error::InvalidEnumValue)?,
                 ))
             }
-            pkt_type::CONTROL_PACKET => {
+            PktType::ControlPacket => {
                 let hdr =
                     wire::ControlPacketHeader::read_from_bytes(type_header).map_err(wire_err!())?;
                 Ok(Packet::Data(crate::packet::DataPacket {
@@ -1148,7 +1158,7 @@ impl<R: Role> Parser<R> {
                     data: data.clone(),
                 }))
             }
-            pkt_type::BULK_PACKET => {
+            PktType::BulkPacket => {
                 if self.negotiated(Cap::BulkLength32Bits) {
                     let hdr = wire::BulkPacketHeader::read_from_bytes(type_header)
                         .map_err(wire_err!())?;
@@ -1178,7 +1188,7 @@ impl<R: Role> Parser<R> {
                     }))
                 }
             }
-            pkt_type::ISO_PACKET => {
+            PktType::IsoPacket => {
                 let hdr =
                     wire::IsoPacketHeader::read_from_bytes(type_header).map_err(wire_err!())?;
                 Ok(Packet::Data(crate::packet::DataPacket {
@@ -1191,7 +1201,7 @@ impl<R: Role> Parser<R> {
                     data: data.clone(),
                 }))
             }
-            pkt_type::INTERRUPT_PACKET => {
+            PktType::InterruptPacket => {
                 let hdr = wire::InterruptPacketHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
                 Ok(Packet::Data(crate::packet::DataPacket {
@@ -1204,7 +1214,7 @@ impl<R: Role> Parser<R> {
                     data: data.clone(),
                 }))
             }
-            pkt_type::BUFFERED_BULK_PACKET => {
+            PktType::BufferedBulkPacket => {
                 let hdr = wire::BufferedBulkPacketHeader::read_from_bytes(type_header)
                     .map_err(wire_err!())?;
                 Ok(Packet::Data(crate::packet::DataPacket {
@@ -1218,7 +1228,6 @@ impl<R: Role> Parser<R> {
                     data: data.clone(),
                 }))
             }
-            _ => Err(Error::UnknownPacketType(pkt_type)),
         }
     }
 
@@ -1249,9 +1258,10 @@ impl<R: Role> Parser<R> {
 
         // Patch the header now that we know the body length
         let pkt_body_len = (buf.len() - header_start - header_len) as u32;
+        let pkt_type_u32: u32 = pkt_type.into();
         if self.using_32bit_ids() {
             let hdr = wire::Header32 {
-                type_: pkt_type.into(),
+                type_: pkt_type_u32.into(),
                 length: pkt_body_len.into(),
                 id: (id as u32).into(),
             };
@@ -1259,7 +1269,7 @@ impl<R: Role> Parser<R> {
                 .copy_from_slice(zerocopy::IntoBytes::as_bytes(&hdr));
         } else {
             let hdr = wire::Header {
-                type_: pkt_type.into(),
+                type_: pkt_type_u32.into(),
                 length: pkt_body_len.into(),
                 id: id.into(),
             };

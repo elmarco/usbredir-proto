@@ -5,7 +5,7 @@ use bytes::Bytes;
 
 use crate::caps::Caps;
 use crate::filter::FilterRule;
-use crate::proto::{Endpoint, Speed, Status, TransferType};
+use crate::proto::{Endpoint, PktType, Speed, Status, TransferType};
 
 /// The type-specific part of a data transfer packet.
 ///
@@ -42,16 +42,15 @@ pub enum DataKind {
 }
 
 impl DataKind {
-    /// Returns the wire packet type ID for this data kind.
+    /// Returns the wire packet type for this data kind.
     #[must_use]
-    pub fn packet_type(&self) -> u32 {
-        use crate::proto::pkt_type::*;
+    pub fn packet_type(&self) -> PktType {
         match self {
-            DataKind::Control { .. } => CONTROL_PACKET,
-            DataKind::Bulk { .. } => BULK_PACKET,
-            DataKind::Iso { .. } => ISO_PACKET,
-            DataKind::Interrupt { .. } => INTERRUPT_PACKET,
-            DataKind::BufferedBulk { .. } => BUFFERED_BULK_PACKET,
+            DataKind::Control { .. } => PktType::ControlPacket,
+            DataKind::Bulk { .. } => PktType::BulkPacket,
+            DataKind::Iso { .. } => PktType::IsoPacket,
+            DataKind::Interrupt { .. } => PktType::InterruptPacket,
+            DataKind::BufferedBulk { .. } => PktType::BufferedBulkPacket,
         }
     }
 
@@ -206,31 +205,30 @@ pub enum RequestKind {
 }
 
 impl RequestKind {
-    /// Returns the wire packet type ID for this request kind.
+    /// Returns the wire packet type for this request kind.
     #[must_use]
-    pub fn packet_type(&self) -> u32 {
-        use crate::proto::pkt_type::*;
+    pub fn packet_type(&self) -> PktType {
         match self {
-            RequestKind::Reset => RESET,
-            RequestKind::SetConfiguration { .. } => SET_CONFIGURATION,
-            RequestKind::GetConfiguration => GET_CONFIGURATION,
-            RequestKind::ConfigurationStatus { .. } => CONFIGURATION_STATUS,
-            RequestKind::SetAltSetting { .. } => SET_ALT_SETTING,
-            RequestKind::GetAltSetting { .. } => GET_ALT_SETTING,
-            RequestKind::AltSettingStatus { .. } => ALT_SETTING_STATUS,
-            RequestKind::StartIsoStream { .. } => START_ISO_STREAM,
-            RequestKind::StopIsoStream { .. } => STOP_ISO_STREAM,
-            RequestKind::IsoStreamStatus { .. } => ISO_STREAM_STATUS,
-            RequestKind::StartInterruptReceiving { .. } => START_INTERRUPT_RECEIVING,
-            RequestKind::StopInterruptReceiving { .. } => STOP_INTERRUPT_RECEIVING,
-            RequestKind::InterruptReceivingStatus { .. } => INTERRUPT_RECEIVING_STATUS,
-            RequestKind::AllocBulkStreams { .. } => ALLOC_BULK_STREAMS,
-            RequestKind::FreeBulkStreams { .. } => FREE_BULK_STREAMS,
-            RequestKind::BulkStreamsStatus { .. } => BULK_STREAMS_STATUS,
-            RequestKind::CancelDataPacket => CANCEL_DATA_PACKET,
-            RequestKind::StartBulkReceiving { .. } => START_BULK_RECEIVING,
-            RequestKind::StopBulkReceiving { .. } => STOP_BULK_RECEIVING,
-            RequestKind::BulkReceivingStatus { .. } => BULK_RECEIVING_STATUS,
+            RequestKind::Reset => PktType::Reset,
+            RequestKind::SetConfiguration { .. } => PktType::SetConfiguration,
+            RequestKind::GetConfiguration => PktType::GetConfiguration,
+            RequestKind::ConfigurationStatus { .. } => PktType::ConfigurationStatus,
+            RequestKind::SetAltSetting { .. } => PktType::SetAltSetting,
+            RequestKind::GetAltSetting { .. } => PktType::GetAltSetting,
+            RequestKind::AltSettingStatus { .. } => PktType::AltSettingStatus,
+            RequestKind::StartIsoStream { .. } => PktType::StartIsoStream,
+            RequestKind::StopIsoStream { .. } => PktType::StopIsoStream,
+            RequestKind::IsoStreamStatus { .. } => PktType::IsoStreamStatus,
+            RequestKind::StartInterruptReceiving { .. } => PktType::StartInterruptReceiving,
+            RequestKind::StopInterruptReceiving { .. } => PktType::StopInterruptReceiving,
+            RequestKind::InterruptReceivingStatus { .. } => PktType::InterruptReceivingStatus,
+            RequestKind::AllocBulkStreams { .. } => PktType::AllocBulkStreams,
+            RequestKind::FreeBulkStreams { .. } => PktType::FreeBulkStreams,
+            RequestKind::BulkStreamsStatus { .. } => PktType::BulkStreamsStatus,
+            RequestKind::CancelDataPacket => PktType::CancelDataPacket,
+            RequestKind::StartBulkReceiving { .. } => PktType::StartBulkReceiving,
+            RequestKind::StopBulkReceiving { .. } => PktType::StopBulkReceiving,
+            RequestKind::BulkReceivingStatus { .. } => PktType::BulkReceivingStatus,
         }
     }
 
@@ -504,19 +502,18 @@ impl core::fmt::Display for Packet {
 }
 
 impl Packet {
-    /// Returns the wire packet type ID for this variant.
+    /// Returns the wire packet type for this variant.
     #[must_use]
-    pub fn packet_type(&self) -> u32 {
-        use crate::proto::pkt_type::*;
+    pub fn packet_type(&self) -> PktType {
         match self {
-            Packet::Hello { .. } => HELLO,
-            Packet::DeviceConnect { .. } => DEVICE_CONNECT,
-            Packet::DeviceDisconnect => DEVICE_DISCONNECT,
-            Packet::InterfaceInfo { .. } => INTERFACE_INFO,
-            Packet::EpInfo { .. } => EP_INFO,
-            Packet::FilterReject => FILTER_REJECT,
-            Packet::FilterFilter { .. } => FILTER_FILTER,
-            Packet::DeviceDisconnectAck => DEVICE_DISCONNECT_ACK,
+            Packet::Hello { .. } => PktType::Hello,
+            Packet::DeviceConnect { .. } => PktType::DeviceConnect,
+            Packet::DeviceDisconnect => PktType::DeviceDisconnect,
+            Packet::InterfaceInfo { .. } => PktType::InterfaceInfo,
+            Packet::EpInfo { .. } => PktType::EpInfo,
+            Packet::FilterReject => PktType::FilterReject,
+            Packet::FilterFilter { .. } => PktType::FilterFilter,
+            Packet::DeviceDisconnectAck => PktType::DeviceDisconnectAck,
             Packet::Request(req) => req.kind.packet_type(),
             Packet::Data(d) => d.kind.packet_type(),
         }

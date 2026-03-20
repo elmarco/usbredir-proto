@@ -1,5 +1,5 @@
 use crate::caps::Cap;
-use crate::proto::Endpoint;
+use crate::proto::{Endpoint, PktType};
 
 /// Errors returned by the parser during packet encoding, decoding, or verification.
 #[derive(Debug, thiserror::Error)]
@@ -7,8 +7,8 @@ use crate::proto::Endpoint;
 pub enum Error {
     #[error("unknown packet type: {0}")]
     UnknownPacketType(u32),
-    #[error("invalid packet length: type={packet_type}, length={length}")]
-    InvalidPacketLength { packet_type: u32, length: u32 },
+    #[error("invalid packet length: type={packet_type:?}, length={length}")]
+    InvalidPacketLength { packet_type: PktType, length: u32 },
     #[error("packet too large: length={length}, max={max}")]
     PacketTooLarge { length: u32, max: u32 },
     #[error("data length mismatch: data_len={data_len}, header_len={header_len}")]
@@ -25,8 +25,8 @@ pub enum Error {
     InterfaceCountTooLarge(u32),
     #[error("invalid enum value: {0}")]
     InvalidEnumValue(u8),
-    #[error("failed to decode wire header for packet type {packet_type}")]
-    WireHeaderDecode { packet_type: u32 },
+    #[error("failed to decode wire header for packet type {packet_type:?}")]
+    WireHeaderDecode { packet_type: PktType },
     #[error("invalid UTF-8 in packet data")]
     InvalidUtf8,
     #[error("filter data not null-terminated")]

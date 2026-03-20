@@ -62,16 +62,17 @@ impl<R: Role> Parser<R> {
         {
             // Reconstruct the consumed header so the deserializer sees the full packet
             let mut hdr_bytes = Vec::new();
+            let pkt_type_u32: u32 = pkt_type.into();
             if self.is_using_32bit_ids() {
                 let hdr = crate::wire::Header32 {
-                    type_: pkt_type.into(),
+                    type_: pkt_type_u32.into(),
                     length: pkt_length.into(),
                     id: (pkt_id as u32).into(),
                 };
                 hdr_bytes.extend_from_slice(zerocopy::IntoBytes::as_bytes(&hdr));
             } else {
                 let hdr = crate::wire::Header {
-                    type_: pkt_type.into(),
+                    type_: pkt_type_u32.into(),
                     length: pkt_length.into(),
                     id: pkt_id.into(),
                 };

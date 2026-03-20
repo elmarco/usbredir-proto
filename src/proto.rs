@@ -87,7 +87,14 @@ impl TryFrom<u32> for PktType {
     }
 }
 
+impl From<PktType> for u32 {
+    fn from(p: PktType) -> u32 {
+        p as u32
+    }
+}
+
 /// Backward-compatible module re-exporting packet type IDs as constants.
+#[doc(hidden)]
 pub mod pkt_type {
     use super::PktType;
 

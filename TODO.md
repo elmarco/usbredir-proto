@@ -10,10 +10,10 @@
   need runtime direction checks. The existing 27 runtime check points in `get_type_header_len`
   comprehensively cover every directional packet type.
 
-- [ ] **Use `PktType` enum instead of `u32` constants internally**
-  Use `PktType` throughout the codebase (in `Packet::packet_type()`, match arms, error
-  variants). The `pkt_type::*` constants module can be `#[doc(hidden)]` or removed.
-  If wire-level `u32` is needed, that's what `PktType as u32` and `TryFrom` are for.
+- [x] **Use `PktType` enum instead of `u32` constants internally**
+  Done: all internal code now uses `PktType` enum variants. The `pkt_type` constants
+  module is `#[doc(hidden)]`. Match arms are now exhaustive (no `_ =>` fallthrough
+  in `decode_packet`). Error variants use `PktType` where the type is known-valid.
 
 ## Medium priority
 
