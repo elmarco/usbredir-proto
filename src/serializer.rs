@@ -18,11 +18,11 @@ use bytes::Bytes;
 
 use crate::caps::Caps;
 use crate::error::{Error, Result};
-use crate::parser::{Parser, ParserConfig};
+use crate::parser::{Parser, ParserConfig, Role};
 
 const SERIALIZE_MAGIC: u32 = 0x55525031;
 
-impl Parser {
+impl<R: Role> Parser<R> {
     /// Serialize the parser state to a byte buffer (C-compatible format, magic `0x55525031`).
     pub fn serialize(&self) -> Result<Vec<u8>> {
         let mut out = Vec::new();
@@ -217,6 +217,7 @@ fn read_data<'a>(data: &'a [u8], pos: &mut usize) -> Result<&'a [u8]> {
 mod tests {
     use super::*;
     use crate::caps::{Cap, Caps};
+    use crate::parser::Host;
 
     fn make_config() -> ParserConfig {
         let mut caps = Caps::new();
@@ -230,14 +231,13 @@ mod tests {
         ParserConfig {
             version: "test".to_string(),
             caps,
-            is_host: true,
             no_hello: false,
         }
     }
 
     #[test]
     fn serialize_roundtrip() {
-        let parser = Parser::new(make_config());
+        let parser = Parser::<Host>::new(make_config());
         let data = parser.serialize().unwrap();
 
         // Check magic
@@ -246,7 +246,7 @@ mod tests {
             0x55525031
         );
 
-        let restored = Parser::unserialize(make_config(), &data).unwrap();
+        let restored = Parser::<Host>::unserialize(make_config(), &data).unwrap();
         assert_eq!(restored.our_caps(), parser.our_caps());
     }
 
@@ -256,6 +256,6 @@ mod tests {
         // wrong magic
         data[0..4].copy_from_slice(&0xDEADBEEFu32.to_le_bytes());
         data[4..8].copy_from_slice(&12u32.to_le_bytes());
-        assert!(Parser::unserialize(make_config(), &data).is_err());
+        assert!(Parser::<Host>::unserialize(make_config(), &data).is_err());
     }
 }

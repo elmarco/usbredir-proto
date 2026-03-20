@@ -3,7 +3,7 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use bytes::Bytes;
 use usbredir_proto::*;
 
-fn make_connected_pair() -> (Parser, Parser) {
+fn make_connected_pair() -> (Parser<Host>, Parser<Guest>) {
     let mut caps = Caps::new();
     caps.set(Cap::ConnectDeviceVersion);
     caps.set(Cap::Filter);
@@ -13,21 +13,14 @@ fn make_connected_pair() -> (Parser, Parser) {
     caps.set(Cap::BulkLength32Bits);
     caps.set(Cap::BulkReceiving);
 
-    let config_host = ParserConfig {
+    let config = ParserConfig {
         version: "bench".into(),
         caps,
-        is_host: true,
-        no_hello: false,
-    };
-    let config_guest = ParserConfig {
-        version: "bench".into(),
-        caps,
-        is_host: false,
         no_hello: false,
     };
 
-    let mut host = Parser::new(config_host);
-    let mut guest = Parser::new(config_guest);
+    let mut host = Parser::<Host>::new(config.clone());
+    let mut guest = Parser::<Guest>::new(config);
 
     // Exchange hellos
     let h = drain_all(&mut host);
@@ -40,7 +33,7 @@ fn make_connected_pair() -> (Parser, Parser) {
     (host, guest)
 }
 
-fn drain_all(p: &mut Parser) -> Vec<u8> {
+fn drain_all<R: Role>(p: &mut Parser<R>) -> Vec<u8> {
     let mut out = Vec::new();
     while let Some(b) = p.drain() {
         out.extend_from_slice(&b);
@@ -121,22 +114,18 @@ fn bench_roundtrip_hello(c: &mut Criterion) {
     let mut caps = Caps::new();
     caps.set(Cap::Ids64Bits);
 
+    let config = ParserConfig {
+        version: "bench".into(),
+        caps,
+        no_hello: false,
+    };
+
     c.bench_function("roundtrip_hello", |b| {
         b.iter(|| {
-            let mut p = Parser::new(ParserConfig {
-                version: "bench".into(),
-                caps,
-                is_host: true,
-                no_hello: false,
-            });
+            let mut p = Parser::<Host>::new(config.clone());
             let wire = drain_all(&mut p);
 
-            let mut p2 = Parser::new(ParserConfig {
-                version: "bench".into(),
-                caps,
-                is_host: false,
-                no_hello: false,
-            });
+            let mut p2 = Parser::<Guest>::new(config.clone());
             p2.feed(black_box(&wire));
             while p2.poll().is_some() {}
         })

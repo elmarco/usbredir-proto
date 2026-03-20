@@ -319,11 +319,10 @@ fn rust_caps() -> Caps {
     c
 }
 
-fn rust_config(is_host: bool) -> ParserConfig {
+fn rust_config() -> ParserConfig {
     ParserConfig {
         version: "rust-test".to_string(),
         caps: rust_caps(),
-        is_host,
         no_hello: false,
     }
 }
@@ -411,7 +410,7 @@ unsafe fn c_feed(p: *mut sys::usbredirparser, data: &[u8]) -> c_int {
 }
 
 /// Drain all bytes from a Rust parser's output queue
-fn rust_drain_all(r: &mut Parser) -> Vec<u8> {
+fn rust_drain_all<R: Role>(r: &mut Parser<R>) -> Vec<u8> {
     let mut out = Vec::new();
     while let Some(b) = r.drain() {
         out.extend_from_slice(&b);
@@ -420,7 +419,7 @@ fn rust_drain_all(r: &mut Parser) -> Vec<u8> {
 }
 
 /// Drain all events, return list of Packets
-fn rust_drain_packets(r: &mut Parser) -> Vec<Packet> {
+fn rust_drain_packets<R: Role>(r: &mut Parser<R>) -> Vec<Packet> {
     let mut pkts = Vec::new();
     while let Some(ev) = r.poll() {
         if let Ok(p) = ev {
@@ -431,12 +430,12 @@ fn rust_drain_packets(r: &mut Parser) -> Vec<Packet> {
 }
 
 /// Create a connected pair: (C parser, Rust parser) with hellos exchanged.
-/// `c_is_host` determines C's role; Rust gets the opposite.
-unsafe fn connected_pair(c_is_host: bool) -> (*mut sys::usbredirparser, Parser) {
+/// `R` determines the Rust parser's role; C gets the opposite.
+unsafe fn connected_pair<R: Role>() -> (*mut sys::usbredirparser, Parser<R>) {
     reset_io();
-    let cp = make_c_parser(c_is_host, false);
+    let cp = make_c_parser(!R::IS_HOST, false);
 
-    let mut rp = Parser::new(rust_config(!c_is_host));
+    let mut rp = Parser::<R>::new(rust_config());
 
     // C hello → Rust
     let c_hello = c_capture(cp);
@@ -460,14 +459,14 @@ unsafe fn connected_pair(c_is_host: bool) -> (*mut sys::usbredirparser, Parser) 
 //   3. Feed into Rust, verify correct Packet variant
 // ---------------------------------------------------------------------------
 
-/// Helper: C-encode a packet with `encode_fn`, feed to Rust, assert `check_fn` on decoded Packet
-unsafe fn c_to_rust(
-    c_is_host: bool,
+/// Helper: C-encode a packet with `encode_fn`, feed to Rust, assert `check_fn` on decoded Packet.
+/// `R` is the Rust parser's role (C gets the opposite).
+unsafe fn c_to_rust<R: Role>(
     encode_fn: unsafe fn(*mut sys::usbredirparser),
     check_fn: fn(&Packet) -> bool,
     name: &str,
 ) {
-    let (cp, mut rp) = connected_pair(c_is_host);
+    let (cp, mut rp) = connected_pair::<R>();
     encode_fn(cp);
     let wire = c_capture(cp);
     assert!(!wire.is_empty(), "{name}: C produced no bytes");
@@ -481,9 +480,10 @@ unsafe fn c_to_rust(
     sys::usbredirparser_destroy(cp);
 }
 
-/// Helper: Rust-encode a packet, feed to C, assert C callback fires
-unsafe fn rust_to_c(c_is_host: bool, packet: Packet, name: &str) {
-    let (cp, mut rp) = connected_pair(c_is_host);
+/// Helper: Rust-encode a packet, feed to C, assert C callback fires.
+/// `R` is the Rust parser's role (C gets the opposite).
+unsafe fn rust_to_c<R: Role>(packet: Packet, name: &str) {
+    let (cp, mut rp) = connected_pair::<R>();
 
     rp.send(&packet)
         .unwrap_or_else(|_| panic!("{name}: Rust send failed"));
@@ -500,21 +500,21 @@ unsafe fn rust_to_c(c_is_host: bool, packet: Packet, name: &str) {
     sys::usbredirparser_destroy(cp);
 }
 
-/// Helper: Encode with both C and Rust, assert byte-equal wire output
-unsafe fn byte_compare(
-    c_is_host: bool,
+/// Helper: Encode with both C and Rust, assert byte-equal wire output.
+/// `R` is the sender's role (both C and Rust encode with this role).
+unsafe fn byte_compare<R: Role>(
     encode_c: unsafe fn(*mut sys::usbredirparser),
     packet: Packet,
     name: &str,
 ) {
-    // --- C side ---
-    let (cp_c, _rp_c) = connected_pair(c_is_host);
+    // --- C side (C sends as R, so Rust receives as R::Peer) ---
+    let (cp_c, _rp_c) = connected_pair::<R::Peer>();
     encode_c(cp_c);
     let c_wire = c_capture(cp_c);
     sys::usbredirparser_destroy(cp_c);
 
-    // --- Rust side (Rust needs the same role as C, so flip c_is_host) ---
-    let (cp_r, mut rp_r) = connected_pair(!c_is_host);
+    // --- Rust side (Rust sends as R) ---
+    let (cp_r, mut rp_r) = connected_pair::<R>();
     rp_r.send(&packet)
         .unwrap_or_else(|_| panic!("{name}: Rust send failed"));
     let rust_wire = rust_drain_all(&mut rp_r);
@@ -564,8 +564,7 @@ fn interop_device_connect() {
         }
 
         // C(host) → Rust(guest)
-        c_to_rust(
-            true,
+        c_to_rust::<Guest>(
             c_encode,
             |p| {
                 matches!(
@@ -580,9 +579,9 @@ fn interop_device_connect() {
             "device_connect",
         );
         // Rust(host) → C(guest)
-        rust_to_c(false, pkt.clone(), "device_connect");
+        rust_to_c::<Host>(pkt.clone(), "device_connect");
         // Byte comparison: both encode as host
-        byte_compare(true, c_encode, pkt, "device_connect");
+        byte_compare::<Host>(c_encode, pkt, "device_connect");
     }
 }
 
@@ -594,15 +593,13 @@ fn interop_device_disconnect() {
         unsafe fn c_encode(cp: *mut sys::usbredirparser) {
             sys::usbredirparser_send_device_disconnect(cp);
         }
-        c_to_rust(
-            true,
+        c_to_rust::<Guest>(
             c_encode,
             |p| matches!(p, Packet::DeviceDisconnect),
             "device_disconnect",
         );
-        rust_to_c(false, Packet::DeviceDisconnect, "device_disconnect");
-        byte_compare(
-            true,
+        rust_to_c::<Host>(Packet::DeviceDisconnect, "device_disconnect");
+        byte_compare::<Host>(
             c_encode,
             Packet::DeviceDisconnect,
             "device_disconnect",
@@ -618,15 +615,14 @@ fn interop_reset() {
         unsafe fn c_encode(cp: *mut sys::usbredirparser) {
             sys::usbredirparser_send_reset(cp);
         }
-        c_to_rust(
-            false,
+        c_to_rust::<Host>(
             c_encode,
             |p| matches!(p, Packet::Request(RequestPacket { kind: RequestKind::Reset, .. })),
             "reset",
         );
-        rust_to_c(true, Packet::reset(1), "reset");
+        rust_to_c::<Guest>(Packet::reset(1), "reset");
         // C's send_reset doesn't take an id — it always uses 0
-        byte_compare(false, c_encode, Packet::reset(0), "reset");
+        byte_compare::<Guest>(c_encode, Packet::reset(0), "reset");
     }
 }
 
@@ -668,8 +664,7 @@ fn interop_interface_info() {
             sys::usbredirparser_send_interface_info(cp, &mut h);
         }
 
-        c_to_rust(
-            true,
+        c_to_rust::<Guest>(
             c_encode,
             |p| {
                 matches!(
@@ -682,8 +677,8 @@ fn interop_interface_info() {
             },
             "interface_info",
         );
-        rust_to_c(false, pkt.clone(), "interface_info");
-        byte_compare(true, c_encode, pkt, "interface_info");
+        rust_to_c::<Host>(pkt.clone(), "interface_info");
+        byte_compare::<Host>(c_encode, pkt, "interface_info");
     }
 }
 
@@ -701,8 +696,7 @@ fn interop_ep_info() {
             sys::usbredirparser_send_ep_info(cp, &mut h);
         }
 
-        c_to_rust(
-            true,
+        c_to_rust::<Guest>(
             c_encode,
             |p| matches!(p, Packet::EpInfo { .. }),
             "ep_info",
@@ -720,8 +714,8 @@ fn interop_ep_info() {
             max_packet_size,
             max_streams: [0u32; 32],
         };
-        rust_to_c(false, pkt.clone(), "ep_info");
-        byte_compare(true, c_encode, pkt, "ep_info");
+        rust_to_c::<Host>(pkt.clone(), "ep_info");
+        byte_compare::<Host>(c_encode, pkt, "ep_info");
     }
 }
 
@@ -734,8 +728,7 @@ fn interop_set_configuration() {
             let mut h = sys::usb_redir_set_configuration_header { configuration: 1 };
             sys::usbredirparser_send_set_configuration(cp, 42, &mut h);
         }
-        c_to_rust(
-            false,
+        c_to_rust::<Host>(
             c_encode,
             |p| {
                 matches!(
@@ -745,13 +738,11 @@ fn interop_set_configuration() {
             },
             "set_configuration",
         );
-        rust_to_c(
-            true,
+        rust_to_c::<Guest>(
             Packet::set_configuration(42, 1),
             "set_configuration",
         );
-        byte_compare(
-            false,
+        byte_compare::<Guest>(
             c_encode,
             Packet::set_configuration(42, 1),
             "set_configuration",
@@ -767,19 +758,16 @@ fn interop_get_configuration() {
         unsafe fn c_encode(cp: *mut sys::usbredirparser) {
             sys::usbredirparser_send_get_configuration(cp, 7);
         }
-        c_to_rust(
-            false,
+        c_to_rust::<Host>(
             c_encode,
             |p| matches!(p, Packet::Request(RequestPacket { id: 7, kind: RequestKind::GetConfiguration })),
             "get_configuration",
         );
-        rust_to_c(
-            true,
+        rust_to_c::<Guest>(
             Packet::get_configuration(7),
             "get_configuration",
         );
-        byte_compare(
-            false,
+        byte_compare::<Guest>(
             c_encode,
             Packet::get_configuration(7),
             "get_configuration",
@@ -799,8 +787,7 @@ fn interop_configuration_status() {
             };
             sys::usbredirparser_send_configuration_status(cp, 10, &mut h);
         }
-        c_to_rust(
-            true,
+        c_to_rust::<Guest>(
             c_encode,
             |p| {
                 matches!(
@@ -810,13 +797,11 @@ fn interop_configuration_status() {
             },
             "configuration_status",
         );
-        rust_to_c(
-            false,
+        rust_to_c::<Host>(
             Packet::configuration_status(10, Status::Success, 2),
             "configuration_status",
         );
-        byte_compare(
-            true,
+        byte_compare::<Host>(
             c_encode,
             Packet::configuration_status(10, Status::Success, 2),
             "configuration_status",
@@ -836,8 +821,7 @@ fn interop_set_alt_setting() {
             };
             sys::usbredirparser_send_set_alt_setting(cp, 20, &mut h);
         }
-        c_to_rust(
-            false,
+        c_to_rust::<Host>(
             c_encode,
             |p| {
                 matches!(
@@ -847,13 +831,11 @@ fn interop_set_alt_setting() {
             },
             "set_alt_setting",
         );
-        rust_to_c(
-            true,
+        rust_to_c::<Guest>(
             Packet::set_alt_setting(20, 1, 3),
             "set_alt_setting",
         );
-        byte_compare(
-            false,
+        byte_compare::<Guest>(
             c_encode,
             Packet::set_alt_setting(20, 1, 3),
             "set_alt_setting",
@@ -870,8 +852,7 @@ fn interop_get_alt_setting() {
             let mut h = sys::usb_redir_get_alt_setting_header { interface: 2 };
             sys::usbredirparser_send_get_alt_setting(cp, 21, &mut h);
         }
-        c_to_rust(
-            false,
+        c_to_rust::<Host>(
             c_encode,
             |p| {
                 matches!(
@@ -881,13 +862,11 @@ fn interop_get_alt_setting() {
             },
             "get_alt_setting",
         );
-        rust_to_c(
-            true,
+        rust_to_c::<Guest>(
             Packet::get_alt_setting(21, 2),
             "get_alt_setting",
         );
-        byte_compare(
-            false,
+        byte_compare::<Guest>(
             c_encode,
             Packet::get_alt_setting(21, 2),
             "get_alt_setting",
@@ -908,8 +887,7 @@ fn interop_alt_setting_status() {
             };
             sys::usbredirparser_send_alt_setting_status(cp, 22, &mut h);
         }
-        c_to_rust(
-            true,
+        c_to_rust::<Guest>(
             c_encode,
             |p| {
                 matches!(
@@ -919,13 +897,11 @@ fn interop_alt_setting_status() {
             },
             "alt_setting_status",
         );
-        rust_to_c(
-            false,
+        rust_to_c::<Host>(
             Packet::alt_setting_status(22, Status::Success, 1, 2),
             "alt_setting_status",
         );
-        byte_compare(
-            true,
+        byte_compare::<Host>(
             c_encode,
             Packet::alt_setting_status(22, Status::Success, 1, 2),
             "alt_setting_status",
@@ -946,19 +922,16 @@ fn interop_start_iso_stream() {
             };
             sys::usbredirparser_send_start_iso_stream(cp, 30, &mut h);
         }
-        c_to_rust(
-            false,
+        c_to_rust::<Host>(
             c_encode,
             |p| matches!(p, Packet::Request(RequestPacket { id: 30, kind: RequestKind::StartIsoStream { .. } })),
             "start_iso_stream",
         );
-        rust_to_c(
-            true,
+        rust_to_c::<Guest>(
             Packet::start_iso_stream(30, Endpoint::new(0x81), 8, 4),
             "start_iso_stream",
         );
-        byte_compare(
-            false,
+        byte_compare::<Guest>(
             c_encode,
             Packet::start_iso_stream(30, Endpoint::new(0x81), 8, 4),
             "start_iso_stream",
@@ -975,19 +948,16 @@ fn interop_stop_iso_stream() {
             let mut h = sys::usb_redir_stop_iso_stream_header { endpoint: 0x81 };
             sys::usbredirparser_send_stop_iso_stream(cp, 31, &mut h);
         }
-        c_to_rust(
-            false,
+        c_to_rust::<Host>(
             c_encode,
             |p| matches!(p, Packet::Request(RequestPacket { id: 31, kind: RequestKind::StopIsoStream { .. } })),
             "stop_iso_stream",
         );
-        rust_to_c(
-            true,
+        rust_to_c::<Guest>(
             Packet::stop_iso_stream(31, Endpoint::new(0x81)),
             "stop_iso_stream",
         );
-        byte_compare(
-            false,
+        byte_compare::<Guest>(
             c_encode,
             Packet::stop_iso_stream(31, Endpoint::new(0x81)),
             "stop_iso_stream",
@@ -1007,19 +977,16 @@ fn interop_iso_stream_status() {
             };
             sys::usbredirparser_send_iso_stream_status(cp, 32, &mut h);
         }
-        c_to_rust(
-            true,
+        c_to_rust::<Guest>(
             c_encode,
             |p| matches!(p, Packet::Request(RequestPacket { id: 32, kind: RequestKind::IsoStreamStatus { .. } })),
             "iso_stream_status",
         );
-        rust_to_c(
-            false,
+        rust_to_c::<Host>(
             Packet::iso_stream_status(32, Status::Success, Endpoint::new(0x81)),
             "iso_stream_status",
         );
-        byte_compare(
-            true,
+        byte_compare::<Host>(
             c_encode,
             Packet::iso_stream_status(32, Status::Success, Endpoint::new(0x81)),
             "iso_stream_status",
@@ -1036,19 +1003,16 @@ fn interop_start_interrupt_receiving() {
             let mut h = sys::usb_redir_start_interrupt_receiving_header { endpoint: 0x83 };
             sys::usbredirparser_send_start_interrupt_receiving(cp, 40, &mut h);
         }
-        c_to_rust(
-            false,
+        c_to_rust::<Host>(
             c_encode,
             |p| matches!(p, Packet::Request(RequestPacket { id: 40, kind: RequestKind::StartInterruptReceiving { .. } })),
             "start_interrupt_receiving",
         );
-        rust_to_c(
-            true,
+        rust_to_c::<Guest>(
             Packet::start_interrupt_receiving(40, Endpoint::new(0x83)),
             "start_interrupt_receiving",
         );
-        byte_compare(
-            false,
+        byte_compare::<Guest>(
             c_encode,
             Packet::start_interrupt_receiving(40, Endpoint::new(0x83)),
             "start_interrupt_receiving",
@@ -1063,19 +1027,16 @@ fn interop_stop_interrupt_receiving() {
             let mut h = sys::usb_redir_stop_interrupt_receiving_header { endpoint: 0x83 };
             sys::usbredirparser_send_stop_interrupt_receiving(cp, 41, &mut h);
         }
-        c_to_rust(
-            false,
+        c_to_rust::<Host>(
             c_encode,
             |p| matches!(p, Packet::Request(RequestPacket { id: 41, kind: RequestKind::StopInterruptReceiving { .. } })),
             "stop_interrupt_receiving",
         );
-        rust_to_c(
-            true,
+        rust_to_c::<Guest>(
             Packet::stop_interrupt_receiving(41, Endpoint::new(0x83)),
             "stop_interrupt_receiving",
         );
-        byte_compare(
-            false,
+        byte_compare::<Guest>(
             c_encode,
             Packet::stop_interrupt_receiving(41, Endpoint::new(0x83)),
             "stop_interrupt_receiving",
@@ -1093,19 +1054,16 @@ fn interop_interrupt_receiving_status() {
             };
             sys::usbredirparser_send_interrupt_receiving_status(cp, 42, &mut h);
         }
-        c_to_rust(
-            true,
+        c_to_rust::<Guest>(
             c_encode,
             |p| matches!(p, Packet::Request(RequestPacket { id: 42, kind: RequestKind::InterruptReceivingStatus { .. } })),
             "interrupt_receiving_status",
         );
-        rust_to_c(
-            false,
+        rust_to_c::<Host>(
             Packet::interrupt_receiving_status(42, Status::Success, Endpoint::new(0x83)),
             "interrupt_receiving_status",
         );
-        byte_compare(
-            true,
+        byte_compare::<Host>(
             c_encode,
             Packet::interrupt_receiving_status(42, Status::Success, Endpoint::new(0x83)),
             "interrupt_receiving_status",
@@ -1125,8 +1083,7 @@ fn interop_alloc_bulk_streams() {
             };
             sys::usbredirparser_send_alloc_bulk_streams(cp, 50, &mut h);
         }
-        c_to_rust(
-            false,
+        c_to_rust::<Host>(
             c_encode,
             |p| {
                 matches!(
@@ -1136,13 +1093,11 @@ fn interop_alloc_bulk_streams() {
             },
             "alloc_bulk_streams",
         );
-        rust_to_c(
-            true,
+        rust_to_c::<Guest>(
             Packet::alloc_bulk_streams(50, 0x03, 16),
             "alloc_bulk_streams",
         );
-        byte_compare(
-            false,
+        byte_compare::<Guest>(
             c_encode,
             Packet::alloc_bulk_streams(50, 0x03, 16),
             "alloc_bulk_streams",
@@ -1157,8 +1112,7 @@ fn interop_free_bulk_streams() {
             let mut h = sys::usb_redir_free_bulk_streams_header { endpoints: 0x03 };
             sys::usbredirparser_send_free_bulk_streams(cp, 51, &mut h);
         }
-        c_to_rust(
-            false,
+        c_to_rust::<Host>(
             c_encode,
             |p| {
                 matches!(
@@ -1168,13 +1122,11 @@ fn interop_free_bulk_streams() {
             },
             "free_bulk_streams",
         );
-        rust_to_c(
-            true,
+        rust_to_c::<Guest>(
             Packet::free_bulk_streams(51, 0x03),
             "free_bulk_streams",
         );
-        byte_compare(
-            false,
+        byte_compare::<Guest>(
             c_encode,
             Packet::free_bulk_streams(51, 0x03),
             "free_bulk_streams",
@@ -1193,19 +1145,16 @@ fn interop_bulk_streams_status() {
             };
             sys::usbredirparser_send_bulk_streams_status(cp, 52, &mut h);
         }
-        c_to_rust(
-            true,
+        c_to_rust::<Guest>(
             c_encode,
             |p| matches!(p, Packet::Request(RequestPacket { id: 52, kind: RequestKind::BulkStreamsStatus { .. } })),
             "bulk_streams_status",
         );
-        rust_to_c(
-            false,
+        rust_to_c::<Host>(
             Packet::bulk_streams_status(52, 0x03, 16, Status::Success),
             "bulk_streams_status",
         );
-        byte_compare(
-            true,
+        byte_compare::<Host>(
             c_encode,
             Packet::bulk_streams_status(52, 0x03, 16, Status::Success),
             "bulk_streams_status",
@@ -1221,19 +1170,16 @@ fn interop_cancel_data_packet() {
         unsafe fn c_encode(cp: *mut sys::usbredirparser) {
             sys::usbredirparser_send_cancel_data_packet(cp, 60);
         }
-        c_to_rust(
-            false,
+        c_to_rust::<Host>(
             c_encode,
             |p| matches!(p, Packet::Request(RequestPacket { id: 60, kind: RequestKind::CancelDataPacket })),
             "cancel_data_packet",
         );
-        rust_to_c(
-            true,
+        rust_to_c::<Guest>(
             Packet::cancel_data_packet(60),
             "cancel_data_packet",
         );
-        byte_compare(
-            false,
+        byte_compare::<Guest>(
             c_encode,
             Packet::cancel_data_packet(60),
             "cancel_data_packet",
@@ -1255,19 +1201,16 @@ fn interop_start_bulk_receiving() {
             };
             sys::usbredirparser_send_start_bulk_receiving(cp, 70, &mut h);
         }
-        c_to_rust(
-            false,
+        c_to_rust::<Host>(
             c_encode,
             |p| matches!(p, Packet::Request(RequestPacket { id: 70, kind: RequestKind::StartBulkReceiving { .. } })),
             "start_bulk_receiving",
         );
-        rust_to_c(
-            true,
+        rust_to_c::<Guest>(
             Packet::start_bulk_receiving(70, 1, 4096, Endpoint::new(0x82), 8),
             "start_bulk_receiving",
         );
-        byte_compare(
-            false,
+        byte_compare::<Guest>(
             c_encode,
             Packet::start_bulk_receiving(70, 1, 4096, Endpoint::new(0x82), 8),
             "start_bulk_receiving",
@@ -1285,19 +1228,16 @@ fn interop_stop_bulk_receiving() {
             };
             sys::usbredirparser_send_stop_bulk_receiving(cp, 71, &mut h);
         }
-        c_to_rust(
-            false,
+        c_to_rust::<Host>(
             c_encode,
             |p| matches!(p, Packet::Request(RequestPacket { id: 71, kind: RequestKind::StopBulkReceiving { .. } })),
             "stop_bulk_receiving",
         );
-        rust_to_c(
-            true,
+        rust_to_c::<Guest>(
             Packet::stop_bulk_receiving(71, 1, Endpoint::new(0x82)),
             "stop_bulk_receiving",
         );
-        byte_compare(
-            false,
+        byte_compare::<Guest>(
             c_encode,
             Packet::stop_bulk_receiving(71, 1, Endpoint::new(0x82)),
             "stop_bulk_receiving",
@@ -1316,19 +1256,16 @@ fn interop_bulk_receiving_status() {
             };
             sys::usbredirparser_send_bulk_receiving_status(cp, 72, &mut h);
         }
-        c_to_rust(
-            true,
+        c_to_rust::<Guest>(
             c_encode,
             |p| matches!(p, Packet::Request(RequestPacket { id: 72, kind: RequestKind::BulkReceivingStatus { .. } })),
             "bulk_receiving_status",
         );
-        rust_to_c(
-            false,
+        rust_to_c::<Host>(
             Packet::bulk_receiving_status(72, 1, Endpoint::new(0x82), Status::Success),
             "bulk_receiving_status",
         );
-        byte_compare(
-            true,
+        byte_compare::<Host>(
             c_encode,
             Packet::bulk_receiving_status(72, 1, Endpoint::new(0x82), Status::Success),
             "bulk_receiving_status",
@@ -1367,8 +1304,7 @@ fn interop_control_packet() {
             Bytes::from_static(&[0xAA, 0xBB, 0xCC]),
         );
         // C(guest) → Rust(host)
-        c_to_rust(
-            false,
+        c_to_rust::<Host>(
             c_encode,
             |p| {
                 matches!(
@@ -1383,8 +1319,8 @@ fn interop_control_packet() {
             "control_packet",
         );
         // Rust(guest) → C(host)
-        rust_to_c(true, pkt.clone(), "control_packet");
-        byte_compare(false, c_encode, pkt, "control_packet");
+        rust_to_c::<Guest>(pkt.clone(), "control_packet");
+        byte_compare::<Guest>(c_encode, pkt, "control_packet");
     }
 }
 
@@ -1414,8 +1350,7 @@ fn interop_bulk_packet() {
             Bytes::from_static(&[1, 2, 3, 4]),
         );
         // C(guest) → Rust(host)
-        c_to_rust(
-            false,
+        c_to_rust::<Host>(
             c_encode,
             |p| {
                 matches!(
@@ -1430,8 +1365,8 @@ fn interop_bulk_packet() {
             "bulk_packet",
         );
         // Rust(guest) → C(host)
-        rust_to_c(true, pkt.clone(), "bulk_packet");
-        byte_compare(false, c_encode, pkt, "bulk_packet");
+        rust_to_c::<Guest>(pkt.clone(), "bulk_packet");
+        byte_compare::<Guest>(c_encode, pkt, "bulk_packet");
     }
 }
 
@@ -1458,8 +1393,7 @@ fn interop_iso_packet() {
             Bytes::from_static(&[0xDE, 0xAD]),
         );
         // C(host) → Rust(guest)
-        c_to_rust(
-            true,
+        c_to_rust::<Guest>(
             c_encode,
             |p| {
                 matches!(
@@ -1474,8 +1408,8 @@ fn interop_iso_packet() {
             "iso_packet",
         );
         // Rust(host) → C(guest)
-        rust_to_c(false, pkt.clone(), "iso_packet");
-        byte_compare(true, c_encode, pkt, "iso_packet");
+        rust_to_c::<Host>(pkt.clone(), "iso_packet");
+        byte_compare::<Host>(c_encode, pkt, "iso_packet");
     }
 }
 
@@ -1502,8 +1436,7 @@ fn interop_interrupt_packet() {
             Bytes::from_static(&[0xFF]),
         );
         // C(host) → Rust(guest)
-        c_to_rust(
-            true,
+        c_to_rust::<Guest>(
             c_encode,
             |p| {
                 matches!(
@@ -1518,8 +1451,8 @@ fn interop_interrupt_packet() {
             "interrupt_packet",
         );
         // Rust(host) → C(guest)
-        rust_to_c(false, pkt.clone(), "interrupt_packet");
-        byte_compare(true, c_encode, pkt, "interrupt_packet");
+        rust_to_c::<Host>(pkt.clone(), "interrupt_packet");
+        byte_compare::<Host>(c_encode, pkt, "interrupt_packet");
     }
 }
 
@@ -1547,8 +1480,7 @@ fn interop_buffered_bulk_packet() {
             Bytes::from_static(&[10, 20, 30]),
         );
         // C(host) → Rust(guest)
-        c_to_rust(
-            true,
+        c_to_rust::<Guest>(
             c_encode,
             |p| {
                 matches!(
@@ -1563,8 +1495,8 @@ fn interop_buffered_bulk_packet() {
             "buffered_bulk_packet",
         );
         // Rust(host) → C(guest)
-        rust_to_c(false, pkt.clone(), "buffered_bulk_packet");
-        byte_compare(true, c_encode, pkt, "buffered_bulk_packet");
+        rust_to_c::<Host>(pkt.clone(), "buffered_bulk_packet");
+        byte_compare::<Host>(c_encode, pkt, "buffered_bulk_packet");
     }
 }
 
@@ -1576,14 +1508,13 @@ fn interop_filter_reject() {
         unsafe fn c_encode(cp: *mut sys::usbredirparser) {
             sys::usbredirparser_send_filter_reject(cp);
         }
-        c_to_rust(
-            false,
+        c_to_rust::<Host>(
             c_encode,
             |p| matches!(p, Packet::FilterReject),
             "filter_reject",
         );
-        rust_to_c(true, Packet::FilterReject, "filter_reject");
-        byte_compare(false, c_encode, Packet::FilterReject, "filter_reject");
+        rust_to_c::<Guest>(Packet::FilterReject, "filter_reject");
+        byte_compare::<Guest>(c_encode, Packet::FilterReject, "filter_reject");
     }
 }
 
@@ -1612,14 +1543,13 @@ fn interop_filter_filter() {
             }],
         };
         // filter_filter is bidirectional; test from host side
-        c_to_rust(
-            true,
+        c_to_rust::<Guest>(
             c_encode,
             |p| matches!(p, Packet::FilterFilter { .. }),
             "filter_filter",
         );
-        rust_to_c(false, pkt.clone(), "filter_filter");
-        byte_compare(true, c_encode, pkt, "filter_filter");
+        rust_to_c::<Host>(pkt.clone(), "filter_filter");
+        byte_compare::<Host>(c_encode, pkt, "filter_filter");
     }
 }
 
@@ -1632,7 +1562,7 @@ fn interop_device_disconnect_ack() {
         // The C library doesn't expose a public send function for this,
         // so we only test Rust(guest) → C(host).
         // C is host, Rust is guest (the sender)
-        rust_to_c(true, Packet::DeviceDisconnectAck, "device_disconnect_ack");
+        rust_to_c::<Guest>(Packet::DeviceDisconnectAck, "device_disconnect_ack");
     }
 }
 
@@ -1655,11 +1585,10 @@ fn rust_minimal_caps() -> Caps {
     Caps::new() // no caps
 }
 
-fn rust_minimal_config(is_host: bool) -> ParserConfig {
+fn rust_minimal_config() -> ParserConfig {
     ParserConfig {
         version: "rust-test-minimal".to_string(),
         caps: rust_minimal_caps(),
-        is_host,
         no_hello: false,
     }
 }
@@ -1727,11 +1656,12 @@ unsafe fn make_c_parser_with_caps(
 }
 
 /// Connected pair with minimal (no) caps — uses 32-bit ids, no version, etc.
-unsafe fn connected_pair_minimal(c_is_host: bool) -> (*mut sys::usbredirparser, Parser) {
+/// `R` is the Rust parser's role; C gets the opposite.
+unsafe fn connected_pair_minimal<R: Role>() -> (*mut sys::usbredirparser, Parser<R>) {
     reset_io();
     let mut caps = minimal_caps_mask();
-    let cp = make_c_parser_with_caps(c_is_host, false, &mut caps);
-    let mut rp = Parser::new(rust_minimal_config(!c_is_host));
+    let cp = make_c_parser_with_caps(!R::IS_HOST, false, &mut caps);
+    let mut rp = Parser::<R>::new(rust_minimal_config());
 
     let c_hello = c_capture(cp);
     rp.feed(&c_hello);
@@ -1743,18 +1673,17 @@ unsafe fn connected_pair_minimal(c_is_host: bool) -> (*mut sys::usbredirparser, 
     (cp, rp)
 }
 
-/// Connected pair with specific caps
-unsafe fn connected_pair_with_caps(
-    c_is_host: bool,
+/// Connected pair with specific caps.
+/// `R` is the Rust parser's role; C gets the opposite.
+unsafe fn connected_pair_with_caps<R: Role>(
     c_caps: &mut [u32; sys::USB_REDIR_CAPS_SIZE as usize],
     r_caps: Caps,
-) -> (*mut sys::usbredirparser, Parser) {
+) -> (*mut sys::usbredirparser, Parser<R>) {
     reset_io();
-    let cp = make_c_parser_with_caps(c_is_host, false, c_caps);
-    let mut rp = Parser::new(ParserConfig {
+    let cp = make_c_parser_with_caps(!R::IS_HOST, false, c_caps);
+    let mut rp = Parser::<R>::new(ParserConfig {
         version: "rust-test".to_string(),
         caps: r_caps,
-        is_host: !c_is_host,
         no_hello: false,
     });
 
@@ -1774,7 +1703,7 @@ unsafe fn connected_pair_with_caps(
 fn interop_compat_32bit_ids() {
     unsafe {
         // Use minimal caps (no 64-bit ids) → 12-byte header
-        let (cp, mut rp) = connected_pair_minimal(true);
+        let (cp, mut rp) = connected_pair_minimal::<Guest>();
 
         // C(host) sends device_connect with 32-bit header
         let mut h = sys::usb_redir_device_connect_header {
@@ -1809,7 +1738,7 @@ fn interop_compat_32bit_ids() {
         );
 
         // Reverse: Rust encodes with 32-bit ids too
-        let (cp2, mut rp2) = connected_pair_minimal(false);
+        let (cp2, mut rp2) = connected_pair_minimal::<Host>();
         rp2.send(&Packet::DeviceConnect {
             speed: Speed::High,
             device_class: 0x08,
@@ -1855,7 +1784,7 @@ fn interop_compat_no_device_version() {
         let mut r_caps = Caps::new();
         r_caps.set(Cap::Ids64Bits);
 
-        let (cp, mut rp) = connected_pair_with_caps(true, &mut c_caps, r_caps);
+        let (cp, mut rp) = connected_pair_with_caps::<Guest>(&mut c_caps, r_caps);
 
         let mut h = sys::usb_redir_device_connect_header {
             speed: 1,
@@ -1891,7 +1820,7 @@ fn interop_compat_no_device_version() {
         );
 
         // Reverse direction
-        let (cp2, mut rp2) = connected_pair_with_caps(false, &mut c_caps, r_caps);
+        let (cp2, mut rp2) = connected_pair_with_caps::<Host>(&mut c_caps, r_caps);
         rp2.send(&Packet::DeviceConnect {
             speed: Speed::Full,
             device_class: 0xFF,
@@ -1933,7 +1862,7 @@ fn interop_compat_no_ep_info_max_pktsz() {
         let mut r_caps = Caps::new();
         r_caps.set(Cap::Ids64Bits);
 
-        let (cp, mut rp) = connected_pair_with_caps(true, &mut c_caps, r_caps);
+        let (cp, mut rp) = connected_pair_with_caps::<Guest>(&mut c_caps, r_caps);
 
         let mut h: sys::usb_redir_ep_info_header = std::mem::zeroed();
         h.type_[0] = 2; // bulk
@@ -1951,7 +1880,7 @@ fn interop_compat_no_ep_info_max_pktsz() {
         );
 
         // Reverse
-        let (cp2, mut rp2) = connected_pair_with_caps(false, &mut c_caps, r_caps);
+        let (cp2, mut rp2) = connected_pair_with_caps::<Host>(&mut c_caps, r_caps);
         rp2.send(&Packet::EpInfo {
             ep_type: {
                 let mut t = [TransferType::Control; 32];
@@ -1995,7 +1924,7 @@ fn interop_compat_ep_info_no_max_streams() {
         r_caps.set(Cap::Ids64Bits);
         r_caps.set(Cap::EpInfoMaxPacketSize);
 
-        let (cp, mut rp) = connected_pair_with_caps(true, &mut c_caps, r_caps);
+        let (cp, mut rp) = connected_pair_with_caps::<Guest>(&mut c_caps, r_caps);
 
         let mut h: sys::usb_redir_ep_info_header = std::mem::zeroed();
         h.type_[0] = 3; // interrupt
@@ -2033,7 +1962,7 @@ fn interop_compat_16bit_bulk_length() {
         r_caps.set(Cap::Ids64Bits);
 
         // C(guest) sends bulk to host
-        let (cp, mut rp) = connected_pair_with_caps(false, &mut c_caps, r_caps);
+        let (cp, mut rp) = connected_pair_with_caps::<Host>(&mut c_caps, r_caps);
 
         let mut h = sys::usb_redir_bulk_packet_header {
             endpoint: 0x02,
@@ -2069,7 +1998,7 @@ fn interop_compat_16bit_bulk_length() {
         );
 
         // Reverse: Rust encodes with 16-bit bulk length
-        let (cp2, mut rp2) = connected_pair_with_caps(true, &mut c_caps, r_caps);
+        let (cp2, mut rp2) = connected_pair_with_caps::<Guest>(&mut c_caps, r_caps);
         rp2.send(&Packet::bulk_packet(
             100,
             Endpoint::new(0x02),
@@ -2102,7 +2031,7 @@ fn interop_compat_16bit_bulk_length() {
 fn interop_serialize_after_hello() {
     unsafe {
         // Create a connected C parser (has peer caps set)
-        let (cp, rp) = connected_pair(true);
+        let (cp, rp) = connected_pair::<Guest>();
 
         // Serialize C state
         let mut state: *mut u8 = ptr::null_mut();
@@ -2112,7 +2041,7 @@ fn interop_serialize_after_hello() {
         let c_state = slice::from_raw_parts(state, state_len as usize);
 
         // Rust should be able to unserialize C's post-hello state
-        let result = Parser::unserialize(rust_config(true), c_state);
+        let result = Parser::<Host>::unserialize(rust_config(), c_state);
         assert!(
             result.is_ok(),
             "Rust unserialize of C post-hello state failed: {:?}",
@@ -2173,7 +2102,7 @@ fn interop_serialize_c_to_rust() {
             0x55525031
         );
 
-        let result = Parser::unserialize(rust_config(true), state_slice);
+        let result = Parser::<Host>::unserialize(rust_config(), state_slice);
         assert!(
             result.is_ok(),
             "Rust unserialize of C state failed: {:?}",
@@ -2189,7 +2118,7 @@ fn interop_serialize_c_to_rust() {
 fn interop_serialize_rust_to_c() {
     reset_io();
     unsafe {
-        let rp = Parser::new(rust_config(true));
+        let rp = Parser::<Host>::new(rust_config());
         let state = rp.serialize().unwrap();
 
         let cp = make_c_parser(true, true);
@@ -2207,9 +2136,9 @@ fn interop_serialize_rust_to_c() {
 #[test]
 fn verify_interface_count_too_large() {
     // Rust should reject interface_count > 32 on send
-    let mut rp = Parser::new(rust_config(true));
+    let mut rp = Parser::<Host>::new(rust_config());
     // simulate peer caps by feeding a hello
-    let mut peer = Parser::new(rust_config(false));
+    let mut peer = Parser::<Guest>::new(rust_config());
     let peer_hello_bytes = rust_drain_all(&mut peer);
     rp.feed(&peer_hello_bytes);
     rust_drain_packets(&mut rp);
@@ -2227,8 +2156,8 @@ fn verify_interface_count_too_large() {
 #[test]
 fn verify_interrupt_receiving_non_input_ep() {
     // start_interrupt_receiving with output endpoint should fail
-    let mut rp = Parser::new(rust_config(false)); // guest
-    let mut peer = Parser::new(rust_config(true));
+    let mut rp = Parser::<Guest>::new(rust_config()); // guest
+    let mut peer = Parser::<Host>::new(rust_config());
     let peer_hello = rust_drain_all(&mut peer);
     rp.feed(&peer_hello);
     rust_drain_packets(&mut rp);
@@ -2249,8 +2178,8 @@ fn verify_interrupt_receiving_non_input_ep() {
 
 #[test]
 fn verify_bulk_receiving_non_input_ep() {
-    let mut rp = Parser::new(rust_config(false)); // guest
-    let mut peer = Parser::new(rust_config(true));
+    let mut rp = Parser::<Guest>::new(rust_config()); // guest
+    let mut peer = Parser::<Host>::new(rust_config());
     let peer_hello = rust_drain_all(&mut peer);
     rp.feed(&peer_hello);
     rust_drain_packets(&mut rp);
@@ -2264,8 +2193,8 @@ fn verify_bulk_receiving_non_input_ep() {
 
 #[test]
 fn verify_bulk_transfer_too_large() {
-    let mut rp = Parser::new(rust_config(false)); // guest
-    let mut peer = Parser::new(rust_config(true));
+    let mut rp = Parser::<Guest>::new(rust_config()); // guest
+    let mut peer = Parser::<Host>::new(rust_config());
     let peer_hello = rust_drain_all(&mut peer);
     rp.feed(&peer_hello);
     rust_drain_packets(&mut rp);
@@ -2284,16 +2213,12 @@ fn verify_filter_without_cap() {
             c.set(Cap::Ids64Bits);
             c
         },
-        is_host: false,
         no_hello: false,
     };
-    let mut rp = Parser::new(config.clone());
+    let mut rp = Parser::<Guest>::new(config.clone());
 
     // Peer also without filter cap
-    let mut peer = Parser::new(ParserConfig {
-        is_host: true,
-        ..config
-    });
+    let mut peer = Parser::<Host>::new(config);
     let peer_hello = rust_drain_all(&mut peer);
     rp.feed(&peer_hello);
     rust_drain_packets(&mut rp);
@@ -2308,8 +2233,8 @@ fn verify_filter_without_cap() {
 #[test]
 fn verify_data_packet_wrong_direction() {
     // ISO packet can only be sent in one direction per the C verification
-    let mut rp = Parser::new(rust_config(false)); // guest sends
-    let mut peer = Parser::new(rust_config(true));
+    let mut rp = Parser::<Guest>::new(rust_config()); // guest sends
+    let mut peer = Parser::<Host>::new(rust_config());
     let peer_hello = rust_drain_all(&mut peer);
     rp.feed(&peer_hello);
     rust_drain_packets(&mut rp);
@@ -2617,7 +2542,7 @@ fn interop_filter_check_default_allow() {
 fn interop_error_recovery_unknown_type() {
     unsafe {
         // Create a connected pair, then craft a packet with unknown type
-        let (cp, mut rp) = connected_pair(true);
+        let (cp, mut rp) = connected_pair::<Guest>();
 
         // Craft raw bytes: header with unknown type 0xFF, length 4, id 0
         // followed by 4 bytes of garbage, then a valid device_disconnect
@@ -2672,7 +2597,7 @@ fn interop_error_recovery_unknown_type() {
 #[test]
 fn interop_error_recovery_truncated_header() {
     // Feed partial header, then complete data
-    let (_, mut rp) = unsafe { connected_pair(true) };
+    let (_, mut rp) = unsafe { connected_pair::<Guest>() };
 
     // Feed just 4 bytes (incomplete 16-byte header)
     rp.feed(&[0x01, 0x00, 0x00, 0x00]);
@@ -2690,8 +2615,8 @@ fn interop_error_recovery_truncated_header() {
                                                  // Actually, the first 4 bytes were type=0x01 (device_connect), length=?, id=?
                                                  // Let's abandon this and feed a proper complete packet in two parts.
 
-    let mut rp2 = Parser::new(rust_config(false)); // guest, receives from host
-    let mut peer = Parser::new(rust_config(true));
+    let mut rp2 = Parser::<Guest>::new(rust_config()); // guest, receives from host
+    let mut peer = Parser::<Host>::new(rust_config());
     let peer_hello = rust_drain_all(&mut peer);
     rp2.feed(&peer_hello);
     rust_drain_packets(&mut rp2);
@@ -2721,7 +2646,7 @@ fn interop_error_recovery_truncated_header() {
 fn interop_serialize_with_queued_output() {
     unsafe {
         // Create connected pair, queue a packet, then serialize before flushing
-        let (cp, mut rp) = connected_pair(true);
+        let (cp, mut rp) = connected_pair::<Guest>();
 
         // Queue a device_connect from C (host→guest)
         let mut h = sys::usb_redir_device_connect_header {
@@ -2743,7 +2668,7 @@ fn interop_serialize_with_queued_output() {
         let c_state = slice::from_raw_parts(state, state_len as usize);
 
         // Rust should unserialize and have the queued output
-        let result = Parser::unserialize(rust_config(true), c_state);
+        let result = Parser::<Host>::unserialize(rust_config(), c_state);
         assert!(
             result.is_ok(),
             "Rust unserialize with queued output failed: {:?}",
@@ -2776,7 +2701,7 @@ fn interop_serialize_with_queued_output() {
 fn interop_serialize_with_queued_output_rust_to_c() {
     unsafe {
         // Rust queues a packet, serializes, C unserializes and can flush it
-        let (cp, mut rp) = connected_pair(false);
+        let (cp, mut rp) = connected_pair::<Host>();
 
         // Rust (host) queues a device_connect
         rp.send(&Packet::DeviceConnect {
@@ -2828,7 +2753,7 @@ fn interop_serialize_with_queued_output_rust_to_c() {
 #[test]
 fn fuzz_like_garbage_bytes() {
     // Feed garbage bytes to Rust parser — must not panic
-    let mut rp = Parser::new(rust_config(true));
+    let mut rp = Parser::<Host>::new(rust_config());
 
     // Various garbage patterns
     let patterns: Vec<Vec<u8>> = vec![
@@ -2864,10 +2789,10 @@ fn fuzz_like_garbage_bytes() {
 #[test]
 fn fuzz_like_valid_header_bad_body() {
     // Craft packets with valid headers but corrupted bodies
-    let mut rp = Parser::new(rust_config(false)); // guest
+    let mut rp = Parser::<Guest>::new(rust_config()); // guest
 
     // Simulate peer hello so parser has peer caps
-    let mut peer = Parser::new(rust_config(true));
+    let mut peer = Parser::<Host>::new(rust_config());
     let peer_hello = rust_drain_all(&mut peer);
     rp.feed(&peer_hello);
     while rp.poll().is_some() {}

@@ -7,10 +7,10 @@
 //! ```ignore
 //! use tokio::net::TcpStream;
 //! use tokio_util::codec::Framed;
-//! use usbredir_proto::{Packet, ParserConfig, codec::UsbredirCodec};
+//! use usbredir_proto::{Packet, ParserConfig, Host, codec::UsbredirCodec};
 //!
 //! let stream = TcpStream::connect("127.0.0.1:4000").await?;
-//! let codec = UsbredirCodec::new(ParserConfig::new("my-app 1.0").is_host(true));
+//! let codec = UsbredirCodec::<Host>::new(ParserConfig::new("my-app 1.0"));
 //! let mut framed = Framed::new(stream, codec);
 //! ```
 
@@ -19,16 +19,16 @@ use tokio_util::codec::{Decoder, Encoder};
 
 use crate::error::{Error, Result};
 use crate::packet::Packet;
-use crate::parser::{Parser, ParserConfig};
+use crate::parser::{Parser, ParserConfig, Role};
 
 /// A [`tokio_util::codec`] implementation wrapping [`Parser`].
 ///
 /// Decodes inbound bytes into [`Packet`]s and encodes outbound [`Packet`]s.
-pub struct UsbredirCodec {
-    parser: Parser,
+pub struct UsbredirCodec<R: Role> {
+    parser: Parser<R>,
 }
 
-impl UsbredirCodec {
+impl<R: Role> UsbredirCodec<R> {
     /// Create a new codec with the given config.
     pub fn new(config: ParserConfig) -> Self {
         Self {
@@ -37,17 +37,17 @@ impl UsbredirCodec {
     }
 
     /// Access the underlying parser (e.g. to check capabilities).
-    pub fn parser(&self) -> &Parser {
+    pub fn parser(&self) -> &Parser<R> {
         &self.parser
     }
 
     /// Mutable access to the underlying parser.
-    pub fn parser_mut(&mut self) -> &mut Parser {
+    pub fn parser_mut(&mut self) -> &mut Parser<R> {
         &mut self.parser
     }
 }
 
-impl Decoder for UsbredirCodec {
+impl<R: Role> Decoder for UsbredirCodec<R> {
     type Item = Packet;
     type Error = Error;
 
@@ -66,7 +66,7 @@ impl Decoder for UsbredirCodec {
     }
 }
 
-impl Encoder<Packet> for UsbredirCodec {
+impl<R: Role> Encoder<Packet> for UsbredirCodec<R> {
     type Error = Error;
 
     fn encode(&mut self, item: Packet, dst: &mut BytesMut) -> Result<()> {

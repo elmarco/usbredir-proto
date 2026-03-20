@@ -13,18 +13,16 @@ fn all_caps() -> Caps {
         .with(Cap::BulkReceiving)
 }
 
-fn connected_pair() -> (Parser, Parser) {
+fn connected_pair() -> (Parser<Host>, Parser<Guest>) {
     let caps = all_caps();
-    let mut host = Parser::new(ParserConfig {
+    let mut host = Parser::<Host>::new(ParserConfig {
         version: "proptest".into(),
         caps,
-        is_host: true,
         no_hello: false,
     });
-    let mut guest = Parser::new(ParserConfig {
+    let mut guest = Parser::<Guest>::new(ParserConfig {
         version: "proptest".into(),
         caps,
-        is_host: false,
         no_hello: false,
     });
 
@@ -38,7 +36,7 @@ fn connected_pair() -> (Parser, Parser) {
     (host, guest)
 }
 
-fn drain_all(p: &mut Parser) -> Vec<u8> {
+fn drain_all<R: Role>(p: &mut Parser<R>) -> Vec<u8> {
     let mut out = Vec::new();
     while let Some(b) = p.drain() {
         out.extend_from_slice(&b);
@@ -46,7 +44,7 @@ fn drain_all(p: &mut Parser) -> Vec<u8> {
     out
 }
 
-fn roundtrip(sender: &mut Parser, receiver: &mut Parser, packet: Packet) -> Packet {
+fn roundtrip<S: Role, R: Role>(sender: &mut Parser<S>, receiver: &mut Parser<R>, packet: Packet) -> Packet {
     sender.send(&packet).unwrap();
     let wire = drain_all(sender);
     receiver.feed(&wire);
@@ -96,7 +94,7 @@ fn arb_data(max_len: usize) -> impl Strategy<Value = Bytes> {
     prop::collection::vec(any::<u8>(), 0..=max_len).prop_map(Bytes::from)
 }
 
-/// Packets sent by the host (is_host=true), received by guest.
+/// Packets sent by the host, received by guest.
 fn arb_host_sends() -> impl Strategy<Value = Packet> {
     prop_oneof![
         // Device-info packets (host sends device status to guest)
@@ -134,7 +132,7 @@ fn arb_host_sends() -> impl Strategy<Value = Packet> {
     ]
 }
 
-/// Packets sent by the guest (is_host=false), received by host.
+/// Packets sent by the guest, received by host.
 fn arb_guest_sends() -> impl Strategy<Value = Packet> {
     prop_oneof![
         any::<u64>().prop_map(Packet::reset),

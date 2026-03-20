@@ -1,6 +1,7 @@
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 use alloc::string::{String, ToString};
+use core::marker::PhantomData;
 
 use bytes::{Bytes, BytesMut};
 use zerocopy::FromBytes;
@@ -13,14 +14,63 @@ use crate::proto::pkt_type;
 use crate::proto::{Endpoint, Speed, Status, TransferType, MAX_PACKET_SIZE};
 use crate::wire;
 
+mod sealed {
+    pub trait Sealed {}
+}
+
+/// Marker trait for the parser role (host or guest).
+///
+/// The usbredir protocol enforces directionality: some packets can only be
+/// sent by the host, others only by the guest. This trait encodes the role
+/// at the type level so that [`Parser<Host>`] and [`Parser<Guest>`] are
+/// distinct types.
+///
+/// This trait is sealed and cannot be implemented outside this crate.
+pub trait Role: sealed::Sealed + 'static {
+    /// Whether this role represents the USB host side.
+    const IS_HOST: bool;
+
+    /// The opposite role: [`Guest`] for [`Host`], [`Host`] for [`Guest`].
+    type Peer: Role;
+}
+
+/// Marker type for the USB host side.
+///
+/// A `Parser<Host>` can send host-originated packets (e.g. `DeviceConnect`,
+/// status responses) and receives guest-originated packets (e.g. `Reset`,
+/// `SetConfiguration`).
+#[derive(Debug, Clone, Copy)]
+pub struct Host;
+
+/// Marker type for the USB guest side.
+///
+/// A `Parser<Guest>` can send guest-originated packets (e.g. `Reset`,
+/// `SetConfiguration`) and receives host-originated packets (e.g.
+/// `DeviceConnect`, status responses).
+#[derive(Debug, Clone, Copy)]
+pub struct Guest;
+
+impl sealed::Sealed for Host {}
+impl sealed::Sealed for Guest {}
+
+impl Role for Host {
+    const IS_HOST: bool = true;
+    type Peer = Guest;
+}
+
+impl Role for Guest {
+    const IS_HOST: bool = false;
+    type Peer = Host;
+}
+
 /// Configuration for constructing a [`Parser`].
 ///
 /// Use struct literal syntax or the builder methods:
 /// ```
-/// # use usbredir_proto::{ParserConfig, Caps, Cap};
+/// # use usbredir_proto::{ParserConfig, Caps, Cap, Parser, Host};
 /// let config = ParserConfig::new("my-app 1.0")
-///     .is_host(true)
 ///     .cap(Cap::Ids64Bits);
+/// let parser = Parser::<Host>::new(config);
 /// ```
 #[derive(Debug, Clone)]
 pub struct ParserConfig {
@@ -28,12 +78,6 @@ pub struct ParserConfig {
     pub version: String,
     /// Our advertised capabilities.
     pub caps: Caps,
-    /// Whether this parser represents the USB host side.
-    ///
-    /// The protocol enforces directionality: some packets can only be sent
-    /// by the host, others only by the guest. Setting this incorrectly will
-    /// cause send/receive errors.
-    pub is_host: bool,
     /// If true, suppress the automatic Hello packet on construction.
     /// Useful when restoring a parser from serialized state.
     pub no_hello: bool,
@@ -44,7 +88,6 @@ impl Default for ParserConfig {
         Self {
             version: String::new(),
             caps: Caps::new(),
-            is_host: false,
             no_hello: false,
         }
     }
@@ -52,20 +95,13 @@ impl Default for ParserConfig {
 
 impl ParserConfig {
     /// Create a config with the given version string and defaults
-    /// (guest side, all caps disabled, hello enabled).
+    /// (all caps disabled, hello enabled).
     #[must_use]
     pub fn new(version: impl Into<String>) -> Self {
         Self {
             version: version.into(),
             ..Self::default()
         }
-    }
-
-    /// Set whether this is the USB host side.
-    #[must_use]
-    pub fn is_host(mut self, is_host: bool) -> Self {
-        self.is_host = is_host;
-        self
     }
 
     /// Enable a capability.
@@ -111,11 +147,16 @@ pub(crate) enum ParseState {
 
 /// Sans-IO usbredir protocol parser and encoder.
 ///
+/// The type parameter `R` determines whether this parser operates as
+/// the USB [`Host`] or [`Guest`] side. This controls which packets may
+/// be sent and received.
+///
 /// Feed raw bytes with [`feed()`](Self::feed), then pull decoded packets
 /// with [`poll()`](Self::poll) or [`events()`](Self::events).
 /// Encode outgoing packets with [`send()`](Self::send), then pull the
 /// wire bytes with [`drain()`](Self::drain) or [`drain_output()`](Self::drain_output).
-pub struct Parser {
+pub struct Parser<R: Role> {
+    _role: PhantomData<R>,
     config: ParserConfig,
     our_caps: Caps,
     peer_caps: Option<Caps>,
@@ -133,10 +174,10 @@ pub struct Parser {
     output_total_size: u64,
 }
 
-impl core::fmt::Debug for Parser {
+impl<R: Role> core::fmt::Debug for Parser<R> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Parser")
-            .field("is_host", &self.config.is_host)
+            .field("is_host", &R::IS_HOST)
             .field("our_caps", &self.our_caps)
             .field("peer_caps", &self.peer_caps)
             .field("state", &self.state)
@@ -148,19 +189,20 @@ impl core::fmt::Debug for Parser {
     }
 }
 
-impl Parser {
+impl<R: Role> Parser<R> {
     /// Create a new parser. Unless `config.no_hello` is set, a Hello packet
     /// is automatically queued for output.
     pub fn new(config: ParserConfig) -> Self {
         let mut our_caps = config.caps;
         // Guest side automatically sets device_disconnect_ack
-        if !config.is_host {
+        if !R::IS_HOST {
             our_caps.set(Cap::DeviceDisconnectAck);
         }
         our_caps = our_caps.verified();
 
         let no_hello = config.no_hello;
         let mut parser = Self {
+            _role: PhantomData,
             config,
             our_caps,
             peer_caps: None,
@@ -218,7 +260,7 @@ impl Parser {
     }
 
     fn get_type_header_len(&self, pkt_type: u32, sending: bool) -> Result<usize> {
-        let mut command_for_host = self.config.is_host;
+        let mut command_for_host = R::IS_HOST;
         if sending {
             command_for_host = !command_for_host;
         }
@@ -629,7 +671,7 @@ impl Parser {
     /// Verify a decoded packet, matching C's usbredirparser_verify_type_header.
     /// Called on both the receive path (after decode) and the send path (before encode).
     fn verify_packet(&self, packet: &Packet, sending: bool) -> Result<()> {
-        let mut command_for_host = self.config.is_host;
+        let mut command_for_host = R::IS_HOST;
         if sending {
             command_for_host = !command_for_host;
         }
@@ -1638,7 +1680,7 @@ mod tests {
     use crate::caps::{Cap, Caps};
     use crate::packet::RequestKind;
 
-    fn make_config(is_host: bool) -> ParserConfig {
+    fn make_config() -> ParserConfig {
         let mut caps = Caps::new();
         caps.set(Cap::ConnectDeviceVersion);
         caps.set(Cap::Filter);
@@ -1650,15 +1692,14 @@ mod tests {
         ParserConfig {
             version: "test-0.1".to_string(),
             caps,
-            is_host,
             no_hello: false,
         }
     }
 
     #[test]
     fn hello_roundtrip() {
-        let mut host = Parser::new(make_config(true));
-        let mut guest = Parser::new(make_config(false));
+        let mut host = Parser::<Host>::new(make_config());
+        let mut guest = Parser::<Guest>::new(make_config());
 
         // Host drains its hello packet
         let host_hello = host.drain().unwrap();
@@ -1682,8 +1723,8 @@ mod tests {
 
     #[test]
     fn partial_feed() {
-        let mut host = Parser::new(make_config(true));
-        let mut guest = Parser::new(make_config(false));
+        let mut host = Parser::<Host>::new(make_config());
+        let mut guest = Parser::<Guest>::new(make_config());
 
         let host_hello = host.drain().unwrap();
 
@@ -1705,8 +1746,8 @@ mod tests {
 
     #[test]
     fn bidirectional_hello_then_set_config() {
-        let mut host = Parser::new(make_config(true));
-        let mut guest = Parser::new(make_config(false));
+        let mut host = Parser::<Host>::new(make_config());
+        let mut guest = Parser::<Guest>::new(make_config());
 
         // Exchange hellos
         let host_hello = host.drain().unwrap();

@@ -38,9 +38,9 @@
 //! # Example
 //!
 //! ```
-//! use usbredir_proto::{Parser, ParserConfig, Caps, Cap, Packet, Event};
+//! use usbredir_proto::{Parser, ParserConfig, Caps, Cap, Packet, Event, Guest};
 //!
-//! let mut parser = Parser::new(
+//! let mut parser = Parser::<Guest>::new(
 //!     ParserConfig::new("my-app 1.0")
 //!         .cap(Cap::Ids64Bits)
 //! );
@@ -71,5 +71,5 @@ pub use caps::{Cap, Caps};
 pub use error::{Error, FilterError, Result};
 pub use filter::{CheckFlags, DeviceInfo, FilterResult, FilterRule};
 pub use packet::{DataKind, DataPacket, Packet, RequestKind, RequestPacket};
-pub use parser::{Event, Parser, ParserConfig};
+pub use parser::{Event, Guest, Host, Parser, ParserConfig, Role};
 pub use proto::{Endpoint, PktType, Speed, Status, TransferType};
