@@ -420,27 +420,6 @@ impl<R: Role> Parser<R> {
         self.events.pop_front()
     }
 
-    /// Pull the next decoded packet, skipping any parse errors.
-    ///
-    /// This is a convenience wrapper around [`poll()`](Self::poll) for callers
-    /// that don't need to handle parse errors. Errors (unknown packet types,
-    /// malformed headers, direction violations, duplicate Hello, etc.) are
-    /// **silently discarded**. Prefer [`poll()`](Self::poll) or
-    /// [`events()`](Self::events) in production code to avoid missing protocol
-    /// violations or connection-level errors.
-    #[deprecated(
-        since = "0.2.0",
-        note = "silently discards errors; use poll() or events() instead"
-    )]
-    pub fn poll_packet(&mut self) -> Option<Box<Packet>> {
-        loop {
-            match self.events.pop_front()? {
-                Event::Packet(p) => return Some(p),
-                Event::Error(_) => continue,
-            }
-        }
-    }
-
     /// Returns an iterator that drains all pending events.
     pub fn events(&mut self) -> impl Iterator<Item = Event> + '_ {
         core::iter::from_fn(move || self.events.pop_front())
@@ -488,7 +467,11 @@ impl<R: Role> Parser<R> {
                         Ok(t) => t,
                         Err(_) => {
                             #[cfg(feature = "tracing")]
-                            tracing::warn!(pkt_type_raw, pkt_length, "unknown packet type, skipping");
+                            tracing::warn!(
+                                pkt_type_raw,
+                                pkt_length,
+                                "unknown packet type, skipping"
+                            );
                             let _ = self.input.split_to(hlen);
                             self.to_skip = pkt_length as usize;
                             self.events
@@ -528,7 +511,12 @@ impl<R: Role> Parser<R> {
                             && !Self::expects_extra_data(pkt_type))
                     {
                         #[cfg(feature = "tracing")]
-                        tracing::warn!(?pkt_type, pkt_length, type_header_len, "invalid packet length, skipping");
+                        tracing::warn!(
+                            ?pkt_type,
+                            pkt_length,
+                            type_header_len,
+                            "invalid packet length, skipping"
+                        );
                         let _ = self.input.split_to(hlen);
                         self.to_skip = pkt_length as usize;
                         self.events
@@ -1216,12 +1204,7 @@ impl<R: Role> Parser<R> {
 
         let bytes = buf.freeze();
         #[cfg(feature = "tracing")]
-        tracing::debug!(
-            ?pkt_type,
-            id,
-            wire_len = bytes.len(),
-            "packet sent"
-        );
+        tracing::debug!(?pkt_type, id, wire_len = bytes.len(), "packet sent");
         self.output_total_size = self.output_total_size.saturating_add(bytes.len() as u64);
         self.output.push_back(bytes);
 

@@ -60,9 +60,6 @@
   match on just header sizes (~70 lines, down from ~220). `verify_packet()` also
   simplified with `R::IS_HOST ^ sending`.
 
-- [x] **Remove or deprecate `poll_packet()`**
-  Done: added `#[deprecated(since = "0.2.0")]` with guidance to use `poll()` or `events()`.
-
 - [x] **Fix misleading codec decode loop**
   Done: replaced loop with direct `match self.parser.poll()`.
 
