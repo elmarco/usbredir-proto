@@ -45,10 +45,9 @@
   Done: added compile-time assertion in `proto.rs` that `usize` is at least 32 bits.
   Fails at compile time on 16-bit targets instead of silently truncating.
 
-- [ ] **Document or reconsider `Box<Packet>` in events**
-  `Event = Result<Box<Packet>>` heap-allocates every decoded packet. `Packet` is large
-  due to `EpInfo` (320+ bytes) but common hot-path packets (`Data`, `Request`) are small.
-  Either document the rationale or consider alternatives (inline small, box large).
+- [x] **Document or reconsider `Box<Packet>` in events**
+  Done: documented the rationale in the `Event` type alias doc comment. `Packet` is ~288
+  bytes due to `EpInfo`; boxing is correct to avoid bloating `VecDeque` slots.
 
 - [ ] **Remove or hide `verify_rules` no-op**
   `filter.rs:144` — public function that does nothing. Either remove it or make it

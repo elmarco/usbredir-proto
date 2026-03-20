@@ -129,6 +129,10 @@ impl ParserConfig {
 ///
 /// This is a `Result<Box<Packet>, Error>`: `Ok(packet)` for a successfully
 /// decoded packet, `Err(error)` for a parse error encountered during decoding.
+///
+/// `Packet` is boxed because the `EpInfo` variant is ~288 bytes; without boxing,
+/// every `VecDeque` slot in the event queue would be that large. Common
+/// hot-path packets (`Data`, `Request`) are much smaller but share the enum.
 pub type Event = Result<Box<Packet>>;
 
 /// Parse state machine: tracks whether we're waiting for a packet header
