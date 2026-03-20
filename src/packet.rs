@@ -113,8 +113,6 @@ impl core::fmt::Display for DataPacket {
     }
 }
 
-
-
 /// The type-specific part of a request/response packet.
 ///
 /// Request packets always carry a correlation `id` (stored in [`RequestPacket`])
@@ -129,10 +127,7 @@ pub enum RequestKind {
     /// Guest → host: query the current USB configuration.
     GetConfiguration,
     /// Host → guest: response to `SetConfiguration` or `GetConfiguration`.
-    ConfigurationStatus {
-        status: Status,
-        configuration: u8,
-    },
+    ConfigurationStatus { status: Status, configuration: u8 },
     /// Guest → host: select an alternate setting for an interface.
     SetAltSetting { interface: u8, alt: u8 },
     /// Guest → host: query the current alternate setting for an interface.
@@ -155,25 +150,16 @@ pub enum RequestKind {
     /// Guest → host: stop an isochronous stream.
     StopIsoStream { endpoint: Endpoint },
     /// Host → guest: response to `StartIsoStream` or `StopIsoStream`.
-    IsoStreamStatus {
-        status: Status,
-        endpoint: Endpoint,
-    },
+    IsoStreamStatus { status: Status, endpoint: Endpoint },
     /// Guest → host: start forwarding interrupt IN transfers from this endpoint.
     StartInterruptReceiving { endpoint: Endpoint },
     /// Guest → host: stop forwarding interrupt IN transfers.
     StopInterruptReceiving { endpoint: Endpoint },
     /// Host → guest: response to `StartInterruptReceiving` / `StopInterruptReceiving`.
-    InterruptReceivingStatus {
-        status: Status,
-        endpoint: Endpoint,
-    },
+    InterruptReceivingStatus { status: Status, endpoint: Endpoint },
     /// Guest → host: allocate USB 3.0 bulk streams on a set of endpoints.
     /// `endpoints` is a bitmask. Requires [`Cap::BulkStreams`](crate::Cap::BulkStreams).
-    AllocBulkStreams {
-        endpoints: u32,
-        no_streams: u32,
-    },
+    AllocBulkStreams { endpoints: u32, no_streams: u32 },
     /// Guest → host: free previously allocated bulk streams.
     FreeBulkStreams { endpoints: u32 },
     /// Host → guest: response to `AllocBulkStreams` / `FreeBulkStreams`.
@@ -192,10 +178,7 @@ pub enum RequestKind {
         no_transfers: u8,
     },
     /// Guest → host: stop host-buffered bulk IN receiving.
-    StopBulkReceiving {
-        stream_id: u32,
-        endpoint: Endpoint,
-    },
+    StopBulkReceiving { stream_id: u32, endpoint: Endpoint },
     /// Host → guest: response to `StartBulkReceiving` / `StopBulkReceiving`.
     BulkReceivingStatus {
         stream_id: u32,
@@ -313,10 +296,7 @@ impl core::fmt::Display for RequestKind {
                 write!(f, "StopInterruptReceiving({endpoint})")
             }
             RequestKind::InterruptReceivingStatus { status, endpoint } => {
-                write!(
-                    f,
-                    "InterruptReceivingStatus(status={status:?}, {endpoint})"
-                )
+                write!(f, "InterruptReceivingStatus(status={status:?}, {endpoint})")
             }
             RequestKind::AllocBulkStreams {
                 endpoints,
@@ -343,26 +323,23 @@ impl core::fmt::Display for RequestKind {
                 stream_id,
                 ..
             } => {
-                write!(
-                    f,
-                    "StartBulkReceiving({endpoint}, stream={stream_id})"
-                )
+                write!(f, "StartBulkReceiving({endpoint}, stream={stream_id})")
             }
             RequestKind::StopBulkReceiving {
                 endpoint,
                 stream_id,
             } => {
-                write!(
-                    f,
-                    "StopBulkReceiving({endpoint}, stream={stream_id})"
-                )
+                write!(f, "StopBulkReceiving({endpoint}, stream={stream_id})")
             }
             RequestKind::BulkReceivingStatus {
                 status,
                 endpoint,
                 stream_id,
             } => {
-                write!(f, "BulkReceivingStatus(status={status:?}, {endpoint}, stream={stream_id})")
+                write!(
+                    f,
+                    "BulkReceivingStatus(status={status:?}, {endpoint}, stream={stream_id})"
+                )
             }
         }
     }

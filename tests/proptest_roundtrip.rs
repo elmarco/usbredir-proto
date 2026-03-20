@@ -19,13 +19,13 @@ fn connected_pair() -> (Parser<Host>, Parser<Guest>) {
         version: "proptest".into(),
         caps,
         no_hello: false,
-            max_input_buffer: None,
+        max_input_buffer: None,
     });
     let mut guest = Parser::<Guest>::new(ParserConfig {
         version: "proptest".into(),
         caps,
         no_hello: false,
-            max_input_buffer: None,
+        max_input_buffer: None,
     });
 
     let h = drain_all(&mut host);
@@ -46,7 +46,11 @@ fn drain_all<R: Role>(p: &mut Parser<R>) -> Vec<u8> {
     out
 }
 
-fn roundtrip<S: Role, R: Role>(sender: &mut Parser<S>, receiver: &mut Parser<R>, packet: Packet) -> Packet {
+fn roundtrip<S: Role, R: Role>(
+    sender: &mut Parser<S>,
+    receiver: &mut Parser<R>,
+    packet: Packet,
+) -> Packet {
     sender.send(&packet).unwrap();
     let wire = drain_all(sender);
     receiver.feed(&wire).unwrap();

@@ -144,7 +144,9 @@ fn print_help() {
 
 fn parse_ctrl_command(client: &mut Client, parts: &[&str]) -> Option<Packet> {
     if parts.len() < 7 {
-        eprintln!("Usage: ctrl <endpoint> <request> <requesttype> <value> <index> <length> [data...]");
+        eprintln!(
+            "Usage: ctrl <endpoint> <request> <requesttype> <value> <index> <length> [data...]"
+        );
         return None;
     }
 
@@ -231,7 +233,8 @@ async fn main() {
     let mut lines = stdin.lines();
 
     let mut client = Client::new();
-    let mut pending_commands: std::collections::VecDeque<String> = std::collections::VecDeque::new();
+    let mut pending_commands: std::collections::VecDeque<String> =
+        std::collections::VecDeque::new();
     let mut stdin_eof = false;
 
     loop {
@@ -385,9 +388,7 @@ async fn process_command(
                 parse_int::<u8>(parts[3]),
             ) {
                 let id = client.alloc_id();
-                println!(
-                    "Sending StartIsoStream(endpoint={ep:#04x}, pkts={pkts}, urbs={urbs})"
-                );
+                println!("Sending StartIsoStream(endpoint={ep:#04x}, pkts={pkts}, urbs={urbs})");
                 if let Err(e) = framed
                     .send(Packet::start_iso_stream(id, Endpoint::new(ep), pkts, urbs))
                     .await
@@ -486,9 +487,7 @@ fn handle_packet(client: &mut Client, packet: &Packet) -> Option<Vec<Packet>> {
                     Phase::WaitGetConfig if req.id == client.get_config_id => {
                         client.set_config_id = client.alloc_id();
                         client.phase = Phase::WaitSetConfig;
-                        println!(
-                            "Sending SetConfiguration(config={configuration})"
-                        );
+                        println!("Sending SetConfiguration(config={configuration})");
                         Some(vec![Packet::set_configuration(
                             client.set_config_id,
                             *configuration,
@@ -518,9 +517,7 @@ fn handle_packet(client: &mut Client, packet: &Packet) -> Option<Vec<Packet>> {
                     Phase::WaitGetAlt if req.id == client.get_alt_id => {
                         client.set_alt_id = client.alloc_id();
                         client.phase = Phase::WaitSetAlt;
-                        println!(
-                            "Sending SetAltSetting(interface={interface}, alt={alt})"
-                        );
+                        println!("Sending SetAltSetting(interface={interface}, alt={alt})");
                         Some(vec![Packet::set_alt_setting(
                             client.set_alt_id,
                             *interface,
@@ -565,7 +562,12 @@ fn handle_packet(client: &mut Client, packet: &Packet) -> Option<Vec<Packet>> {
         }
 
         Packet::EpInfo(info) => {
-            print_ep_info(&info.ep_type, &info.interval, &info.interface, &info.max_packet_size);
+            print_ep_info(
+                &info.ep_type,
+                &info.interval,
+                &info.interface,
+                &info.max_packet_size,
+            );
             None
         }
 

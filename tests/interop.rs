@@ -324,7 +324,7 @@ fn rust_config() -> ParserConfig {
         version: "rust-test".to_string(),
         caps: rust_caps(),
         no_hello: false,
-            max_input_buffer: None,
+        max_input_buffer: None,
     }
 }
 
@@ -600,11 +600,7 @@ fn interop_device_disconnect() {
             "device_disconnect",
         );
         rust_to_c::<Host>(Packet::DeviceDisconnect, "device_disconnect");
-        byte_compare::<Host>(
-            c_encode,
-            Packet::DeviceDisconnect,
-            "device_disconnect",
-        );
+        byte_compare::<Host>(c_encode, Packet::DeviceDisconnect, "device_disconnect");
     }
 }
 
@@ -618,7 +614,15 @@ fn interop_reset() {
         }
         c_to_rust::<Host>(
             c_encode,
-            |p| matches!(p, Packet::Request(RequestPacket { kind: RequestKind::Reset, .. })),
+            |p| {
+                matches!(
+                    p,
+                    Packet::Request(RequestPacket {
+                        kind: RequestKind::Reset,
+                        ..
+                    })
+                )
+            },
             "reset",
         );
         rust_to_c::<Guest>(Packet::reset(1), "reset");
@@ -694,11 +698,7 @@ fn interop_ep_info() {
             sys::usbredirparser_send_ep_info(cp, &mut h);
         }
 
-        c_to_rust::<Guest>(
-            c_encode,
-            |p| matches!(p, Packet::EpInfo { .. }),
-            "ep_info",
-        );
+        c_to_rust::<Guest>(c_encode, |p| matches!(p, Packet::EpInfo { .. }), "ep_info");
 
         // Match C's zeroed() initialization: unused ep_type entries are 0 (Control)
         let mut ep_type = [TransferType::Control; 32];
@@ -731,15 +731,15 @@ fn interop_set_configuration() {
             |p| {
                 matches!(
                     p,
-                    Packet::Request(RequestPacket { id: 42, kind: RequestKind::SetConfiguration { configuration: 1 } })
+                    Packet::Request(RequestPacket {
+                        id: 42,
+                        kind: RequestKind::SetConfiguration { configuration: 1 }
+                    })
                 )
             },
             "set_configuration",
         );
-        rust_to_c::<Guest>(
-            Packet::set_configuration(42, 1),
-            "set_configuration",
-        );
+        rust_to_c::<Guest>(Packet::set_configuration(42, 1), "set_configuration");
         byte_compare::<Guest>(
             c_encode,
             Packet::set_configuration(42, 1),
@@ -758,18 +758,19 @@ fn interop_get_configuration() {
         }
         c_to_rust::<Host>(
             c_encode,
-            |p| matches!(p, Packet::Request(RequestPacket { id: 7, kind: RequestKind::GetConfiguration })),
+            |p| {
+                matches!(
+                    p,
+                    Packet::Request(RequestPacket {
+                        id: 7,
+                        kind: RequestKind::GetConfiguration
+                    })
+                )
+            },
             "get_configuration",
         );
-        rust_to_c::<Guest>(
-            Packet::get_configuration(7),
-            "get_configuration",
-        );
-        byte_compare::<Guest>(
-            c_encode,
-            Packet::get_configuration(7),
-            "get_configuration",
-        );
+        rust_to_c::<Guest>(Packet::get_configuration(7), "get_configuration");
+        byte_compare::<Guest>(c_encode, Packet::get_configuration(7), "get_configuration");
     }
 }
 
@@ -790,7 +791,13 @@ fn interop_configuration_status() {
             |p| {
                 matches!(
                     p,
-                    Packet::Request(RequestPacket { id: 10, kind: RequestKind::ConfigurationStatus { configuration: 2, .. } })
+                    Packet::Request(RequestPacket {
+                        id: 10,
+                        kind: RequestKind::ConfigurationStatus {
+                            configuration: 2,
+                            ..
+                        }
+                    })
                 )
             },
             "configuration_status",
@@ -824,15 +831,18 @@ fn interop_set_alt_setting() {
             |p| {
                 matches!(
                     p,
-                    Packet::Request(RequestPacket { id: 20, kind: RequestKind::SetAltSetting { interface: 1, alt: 3 } })
+                    Packet::Request(RequestPacket {
+                        id: 20,
+                        kind: RequestKind::SetAltSetting {
+                            interface: 1,
+                            alt: 3
+                        }
+                    })
                 )
             },
             "set_alt_setting",
         );
-        rust_to_c::<Guest>(
-            Packet::set_alt_setting(20, 1, 3),
-            "set_alt_setting",
-        );
+        rust_to_c::<Guest>(Packet::set_alt_setting(20, 1, 3), "set_alt_setting");
         byte_compare::<Guest>(
             c_encode,
             Packet::set_alt_setting(20, 1, 3),
@@ -855,20 +865,16 @@ fn interop_get_alt_setting() {
             |p| {
                 matches!(
                     p,
-                    Packet::Request(RequestPacket { id: 21, kind: RequestKind::GetAltSetting { interface: 2 } })
+                    Packet::Request(RequestPacket {
+                        id: 21,
+                        kind: RequestKind::GetAltSetting { interface: 2 }
+                    })
                 )
             },
             "get_alt_setting",
         );
-        rust_to_c::<Guest>(
-            Packet::get_alt_setting(21, 2),
-            "get_alt_setting",
-        );
-        byte_compare::<Guest>(
-            c_encode,
-            Packet::get_alt_setting(21, 2),
-            "get_alt_setting",
-        );
+        rust_to_c::<Guest>(Packet::get_alt_setting(21, 2), "get_alt_setting");
+        byte_compare::<Guest>(c_encode, Packet::get_alt_setting(21, 2), "get_alt_setting");
     }
 }
 
@@ -890,7 +896,14 @@ fn interop_alt_setting_status() {
             |p| {
                 matches!(
                     p,
-                    Packet::Request(RequestPacket { id: 22, kind: RequestKind::AltSettingStatus { interface: 1, alt: 2, .. } })
+                    Packet::Request(RequestPacket {
+                        id: 22,
+                        kind: RequestKind::AltSettingStatus {
+                            interface: 1,
+                            alt: 2,
+                            ..
+                        }
+                    })
                 )
             },
             "alt_setting_status",
@@ -922,7 +935,15 @@ fn interop_start_iso_stream() {
         }
         c_to_rust::<Host>(
             c_encode,
-            |p| matches!(p, Packet::Request(RequestPacket { id: 30, kind: RequestKind::StartIsoStream { .. } })),
+            |p| {
+                matches!(
+                    p,
+                    Packet::Request(RequestPacket {
+                        id: 30,
+                        kind: RequestKind::StartIsoStream { .. }
+                    })
+                )
+            },
             "start_iso_stream",
         );
         rust_to_c::<Guest>(
@@ -948,7 +969,15 @@ fn interop_stop_iso_stream() {
         }
         c_to_rust::<Host>(
             c_encode,
-            |p| matches!(p, Packet::Request(RequestPacket { id: 31, kind: RequestKind::StopIsoStream { .. } })),
+            |p| {
+                matches!(
+                    p,
+                    Packet::Request(RequestPacket {
+                        id: 31,
+                        kind: RequestKind::StopIsoStream { .. }
+                    })
+                )
+            },
             "stop_iso_stream",
         );
         rust_to_c::<Guest>(
@@ -977,7 +1006,15 @@ fn interop_iso_stream_status() {
         }
         c_to_rust::<Guest>(
             c_encode,
-            |p| matches!(p, Packet::Request(RequestPacket { id: 32, kind: RequestKind::IsoStreamStatus { .. } })),
+            |p| {
+                matches!(
+                    p,
+                    Packet::Request(RequestPacket {
+                        id: 32,
+                        kind: RequestKind::IsoStreamStatus { .. }
+                    })
+                )
+            },
             "iso_stream_status",
         );
         rust_to_c::<Host>(
@@ -1003,7 +1040,15 @@ fn interop_start_interrupt_receiving() {
         }
         c_to_rust::<Host>(
             c_encode,
-            |p| matches!(p, Packet::Request(RequestPacket { id: 40, kind: RequestKind::StartInterruptReceiving { .. } })),
+            |p| {
+                matches!(
+                    p,
+                    Packet::Request(RequestPacket {
+                        id: 40,
+                        kind: RequestKind::StartInterruptReceiving { .. }
+                    })
+                )
+            },
             "start_interrupt_receiving",
         );
         rust_to_c::<Guest>(
@@ -1027,7 +1072,15 @@ fn interop_stop_interrupt_receiving() {
         }
         c_to_rust::<Host>(
             c_encode,
-            |p| matches!(p, Packet::Request(RequestPacket { id: 41, kind: RequestKind::StopInterruptReceiving { .. } })),
+            |p| {
+                matches!(
+                    p,
+                    Packet::Request(RequestPacket {
+                        id: 41,
+                        kind: RequestKind::StopInterruptReceiving { .. }
+                    })
+                )
+            },
             "stop_interrupt_receiving",
         );
         rust_to_c::<Guest>(
@@ -1054,7 +1107,15 @@ fn interop_interrupt_receiving_status() {
         }
         c_to_rust::<Guest>(
             c_encode,
-            |p| matches!(p, Packet::Request(RequestPacket { id: 42, kind: RequestKind::InterruptReceivingStatus { .. } })),
+            |p| {
+                matches!(
+                    p,
+                    Packet::Request(RequestPacket {
+                        id: 42,
+                        kind: RequestKind::InterruptReceivingStatus { .. }
+                    })
+                )
+            },
             "interrupt_receiving_status",
         );
         rust_to_c::<Host>(
@@ -1086,7 +1147,13 @@ fn interop_alloc_bulk_streams() {
             |p| {
                 matches!(
                     p,
-                    Packet::Request(RequestPacket { id: 50, kind: RequestKind::AllocBulkStreams { endpoints: 0x03, no_streams: 16 } })
+                    Packet::Request(RequestPacket {
+                        id: 50,
+                        kind: RequestKind::AllocBulkStreams {
+                            endpoints: 0x03,
+                            no_streams: 16
+                        }
+                    })
                 )
             },
             "alloc_bulk_streams",
@@ -1115,15 +1182,15 @@ fn interop_free_bulk_streams() {
             |p| {
                 matches!(
                     p,
-                    Packet::Request(RequestPacket { id: 51, kind: RequestKind::FreeBulkStreams { endpoints: 0x03 } })
+                    Packet::Request(RequestPacket {
+                        id: 51,
+                        kind: RequestKind::FreeBulkStreams { endpoints: 0x03 }
+                    })
                 )
             },
             "free_bulk_streams",
         );
-        rust_to_c::<Guest>(
-            Packet::free_bulk_streams(51, 0x03),
-            "free_bulk_streams",
-        );
+        rust_to_c::<Guest>(Packet::free_bulk_streams(51, 0x03), "free_bulk_streams");
         byte_compare::<Guest>(
             c_encode,
             Packet::free_bulk_streams(51, 0x03),
@@ -1145,7 +1212,15 @@ fn interop_bulk_streams_status() {
         }
         c_to_rust::<Guest>(
             c_encode,
-            |p| matches!(p, Packet::Request(RequestPacket { id: 52, kind: RequestKind::BulkStreamsStatus { .. } })),
+            |p| {
+                matches!(
+                    p,
+                    Packet::Request(RequestPacket {
+                        id: 52,
+                        kind: RequestKind::BulkStreamsStatus { .. }
+                    })
+                )
+            },
             "bulk_streams_status",
         );
         rust_to_c::<Host>(
@@ -1170,13 +1245,18 @@ fn interop_cancel_data_packet() {
         }
         c_to_rust::<Host>(
             c_encode,
-            |p| matches!(p, Packet::Request(RequestPacket { id: 60, kind: RequestKind::CancelDataPacket })),
+            |p| {
+                matches!(
+                    p,
+                    Packet::Request(RequestPacket {
+                        id: 60,
+                        kind: RequestKind::CancelDataPacket
+                    })
+                )
+            },
             "cancel_data_packet",
         );
-        rust_to_c::<Guest>(
-            Packet::cancel_data_packet(60),
-            "cancel_data_packet",
-        );
+        rust_to_c::<Guest>(Packet::cancel_data_packet(60), "cancel_data_packet");
         byte_compare::<Guest>(
             c_encode,
             Packet::cancel_data_packet(60),
@@ -1201,7 +1281,15 @@ fn interop_start_bulk_receiving() {
         }
         c_to_rust::<Host>(
             c_encode,
-            |p| matches!(p, Packet::Request(RequestPacket { id: 70, kind: RequestKind::StartBulkReceiving { .. } })),
+            |p| {
+                matches!(
+                    p,
+                    Packet::Request(RequestPacket {
+                        id: 70,
+                        kind: RequestKind::StartBulkReceiving { .. }
+                    })
+                )
+            },
             "start_bulk_receiving",
         );
         rust_to_c::<Guest>(
@@ -1228,7 +1316,15 @@ fn interop_stop_bulk_receiving() {
         }
         c_to_rust::<Host>(
             c_encode,
-            |p| matches!(p, Packet::Request(RequestPacket { id: 71, kind: RequestKind::StopBulkReceiving { .. } })),
+            |p| {
+                matches!(
+                    p,
+                    Packet::Request(RequestPacket {
+                        id: 71,
+                        kind: RequestKind::StopBulkReceiving { .. }
+                    })
+                )
+            },
             "stop_bulk_receiving",
         );
         rust_to_c::<Guest>(
@@ -1256,7 +1352,15 @@ fn interop_bulk_receiving_status() {
         }
         c_to_rust::<Guest>(
             c_encode,
-            |p| matches!(p, Packet::Request(RequestPacket { id: 72, kind: RequestKind::BulkReceivingStatus { .. } })),
+            |p| {
+                matches!(
+                    p,
+                    Packet::Request(RequestPacket {
+                        id: 72,
+                        kind: RequestKind::BulkReceivingStatus { .. }
+                    })
+                )
+            },
             "bulk_receiving_status",
         );
         rust_to_c::<Host>(
@@ -1588,7 +1692,7 @@ fn rust_minimal_config() -> ParserConfig {
         version: "rust-test-minimal".to_string(),
         caps: rust_minimal_caps(),
         no_hello: false,
-            max_input_buffer: None,
+        max_input_buffer: None,
     }
 }
 
@@ -1684,7 +1788,7 @@ unsafe fn connected_pair_with_caps<R: Role>(
         version: "rust-test".to_string(),
         caps: r_caps,
         no_hello: false,
-            max_input_buffer: None,
+        max_input_buffer: None,
     });
 
     let c_hello = c_capture(cp);
@@ -2184,7 +2288,13 @@ fn verify_bulk_receiving_non_input_ep() {
     rp.feed(&peer_hello).unwrap();
     rust_drain_packets(&mut rp);
 
-    let result = rp.send(&Packet::start_bulk_receiving(1, 0, 4096, Endpoint::new(0x02), 4));
+    let result = rp.send(&Packet::start_bulk_receiving(
+        1,
+        0,
+        4096,
+        Endpoint::new(0x02),
+        4,
+    ));
     assert!(
         result.is_err(),
         "Should reject non-input endpoint for start_bulk_receiving"
@@ -2199,7 +2309,13 @@ fn verify_bulk_transfer_too_large() {
     rp.feed(&peer_hello).unwrap();
     rust_drain_packets(&mut rp);
 
-    let result = rp.send(&Packet::start_bulk_receiving(1, 0, 256 * 1024 * 1024, Endpoint::new(0x82), 4));
+    let result = rp.send(&Packet::start_bulk_receiving(
+        1,
+        0,
+        256 * 1024 * 1024,
+        Endpoint::new(0x82),
+        4,
+    ));
     assert!(result.is_err(), "Should reject oversized bulk transfer");
 }
 
@@ -2214,7 +2330,7 @@ fn verify_filter_without_cap() {
             c
         },
         no_hello: false,
-            max_input_buffer: None,
+        max_input_buffer: None,
     };
     let mut rp = Parser::<Guest>::new(config.clone());
 
@@ -2578,7 +2694,11 @@ fn interop_error_recovery_unknown_type() {
         while let Some(ev) = rp.poll() {
             match ev {
                 Event::Error(_) => got_error = true,
-                Event::Packet(p) if matches!(*p, Packet::DeviceConnect(DeviceConnectInfo { .. })) => got_packet = true,
+                Event::Packet(p)
+                    if matches!(*p, Packet::DeviceConnect(DeviceConnectInfo { .. })) =>
+                {
+                    got_packet = true
+                }
                 _ => {}
             }
         }

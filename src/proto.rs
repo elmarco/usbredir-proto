@@ -156,7 +156,6 @@ impl From<PktType> for u32 {
     }
 }
 
-
 /// USB transfer completion status (maps to `libusb_transfer_status`).
 ///
 /// Returned by the host to indicate the outcome of a USB transfer request.
@@ -328,7 +327,6 @@ impl From<u8> for Endpoint {
         Self::from_raw(v)
     }
 }
-
 
 impl From<Endpoint> for u8 {
     fn from(ep: Endpoint) -> Self {

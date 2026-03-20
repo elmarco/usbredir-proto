@@ -101,7 +101,10 @@ impl<R: Role> Parser<R> {
 
     /// Restore a parser from serialized state. The `config` must have at least
     /// the same capabilities as the original parser.
-    pub fn unserialize(config: ParserConfig, data: &[u8]) -> core::result::Result<Self, SerializeError> {
+    pub fn unserialize(
+        config: ParserConfig,
+        data: &[u8],
+    ) -> core::result::Result<Self, SerializeError> {
         let mut pos = 0;
 
         let magic = read_u32(data, &mut pos)?;
@@ -204,7 +207,10 @@ fn read_u32(data: &[u8], pos: &mut usize) -> core::result::Result<u32, Serialize
     Ok(val)
 }
 
-fn read_data<'a>(data: &'a [u8], pos: &mut usize) -> core::result::Result<&'a [u8], SerializeError> {
+fn read_data<'a>(
+    data: &'a [u8],
+    pos: &mut usize,
+) -> core::result::Result<&'a [u8], SerializeError> {
     let len = read_u32(data, pos)? as usize;
     if *pos + len > data.len() {
         return Err(SerializeError::BufferUnderrun);

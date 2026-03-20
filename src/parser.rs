@@ -315,9 +315,7 @@ impl<R: Role> Parser<R> {
             }
             PktType::InterfaceInfo => core::mem::size_of::<wire::InterfaceInfoHeader>(),
             PktType::SetConfiguration => core::mem::size_of::<wire::SetConfigurationHeader>(),
-            PktType::ConfigurationStatus => {
-                core::mem::size_of::<wire::ConfigurationStatusHeader>()
-            }
+            PktType::ConfigurationStatus => core::mem::size_of::<wire::ConfigurationStatusHeader>(),
             PktType::SetAltSetting => core::mem::size_of::<wire::SetAltSettingHeader>(),
             PktType::GetAltSetting => core::mem::size_of::<wire::GetAltSettingHeader>(),
             PktType::AltSettingStatus => core::mem::size_of::<wire::AltSettingStatusHeader>(),
@@ -336,13 +334,9 @@ impl<R: Role> Parser<R> {
             PktType::AllocBulkStreams => core::mem::size_of::<wire::AllocBulkStreamsHeader>(),
             PktType::FreeBulkStreams => core::mem::size_of::<wire::FreeBulkStreamsHeader>(),
             PktType::BulkStreamsStatus => core::mem::size_of::<wire::BulkStreamsStatusHeader>(),
-            PktType::StartBulkReceiving => {
-                core::mem::size_of::<wire::StartBulkReceivingHeader>()
-            }
+            PktType::StartBulkReceiving => core::mem::size_of::<wire::StartBulkReceivingHeader>(),
             PktType::StopBulkReceiving => core::mem::size_of::<wire::StopBulkReceivingHeader>(),
-            PktType::BulkReceivingStatus => {
-                core::mem::size_of::<wire::BulkReceivingStatusHeader>()
-            }
+            PktType::BulkReceivingStatus => core::mem::size_of::<wire::BulkReceivingStatusHeader>(),
             PktType::ControlPacket => core::mem::size_of::<wire::ControlPacketHeader>(),
             PktType::BulkPacket => {
                 if self.negotiated(Cap::BulkLength32Bits) {
@@ -418,7 +412,10 @@ impl<R: Role> Parser<R> {
     /// **silently discarded**. Prefer [`poll()`](Self::poll) or
     /// [`events()`](Self::events) in production code to avoid missing protocol
     /// violations or connection-level errors.
-    #[deprecated(since = "0.2.0", note = "silently discards errors; use poll() or events() instead")]
+    #[deprecated(
+        since = "0.2.0",
+        note = "silently discards errors; use poll() or events() instead"
+    )]
     pub fn poll_packet(&mut self) -> Option<Box<Packet>> {
         loop {
             match self.events.pop_front()? {
@@ -497,11 +494,10 @@ impl<R: Role> Parser<R> {
                     if pkt_length > MAX_PACKET_SIZE {
                         let _ = self.input.split_to(hlen);
                         self.to_skip = pkt_length as usize;
-                        self.events
-                            .push_back(Event::Error(Error::PacketTooLarge {
-                                length: pkt_length,
-                                max: MAX_PACKET_SIZE,
-                            }));
+                        self.events.push_back(Event::Error(Error::PacketTooLarge {
+                            length: pkt_length,
+                            max: MAX_PACKET_SIZE,
+                        }));
                         continue;
                     }
 
@@ -839,13 +835,15 @@ impl<R: Role> Parser<R> {
             PktType::InterfaceInfo => {
                 let hdr =
                     wire::InterfaceInfoHeader::read_from_bytes(type_header).map_err(wire_err!())?;
-                Ok(Packet::InterfaceInfo(Box::new(crate::packet::InterfaceInfoData {
-                    interface_count: hdr.interface_count.get(),
-                    interface: hdr.interface,
-                    interface_class: hdr.interface_class,
-                    interface_subclass: hdr.interface_subclass,
-                    interface_protocol: hdr.interface_protocol,
-                })))
+                Ok(Packet::InterfaceInfo(Box::new(
+                    crate::packet::InterfaceInfoData {
+                        interface_count: hdr.interface_count.get(),
+                        interface: hdr.interface,
+                        interface_class: hdr.interface_class,
+                        interface_subclass: hdr.interface_subclass,
+                        interface_protocol: hdr.interface_protocol,
+                    },
+                )))
             }
             PktType::EpInfo => {
                 let mut ep_type = [TransferType::Invalid; 32];
@@ -1659,9 +1657,7 @@ mod tests {
 
         // Now guest sends set_configuration (guest is NOT host, so SetConfiguration
         // is command_for_host=true when sending from guest)
-        guest
-            .send(&Packet::set_configuration(42, 1))
-            .unwrap();
+        guest.send(&Packet::set_configuration(42, 1)).unwrap();
 
         let pkt_bytes = guest.drain().unwrap();
         host.feed(&pkt_bytes).unwrap();
