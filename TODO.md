@@ -37,10 +37,9 @@
 
 ## Low priority
 
-- [ ] **Consider `send(Packet)` by value**
-  `send(&self, packet: &Packet)` forces callers to keep ownership of something they
-  typically don't need after sending. Taking by value would let callers transfer ownership
-  of `Bytes` buffers without cloning.
+- [x] **Consider `send(Packet)` by value**
+  Done: `send()` now accepts `impl Borrow<Packet>`, so callers can pass either
+  `&Packet` (existing code unchanged) or owned `Packet` (no unnecessary borrow).
 
 - [ ] **Address `usize` truncation on small targets**
   `pkt_length as usize` casts in `parser.rs` — on 16-bit targets, `MAX_PACKET_SIZE`

@@ -1234,7 +1234,8 @@ impl<R: Role> Parser<R> {
     // Sans-IO output
     /// Encode and enqueue a packet for output. The wire bytes become available
     /// via [`drain()`](Self::drain) or [`drain_output()`](Self::drain_output).
-    pub fn send(&mut self, packet: &Packet) -> Result<()> {
+    pub fn send(&mut self, packet: impl core::borrow::Borrow<Packet>) -> Result<()> {
+        let packet = packet.borrow();
         // Hello must be sendable before negotiation; all other packets require
         // peer caps so that capability-dependent wire formats are correct.
         if !matches!(*packet, Packet::Hello { .. }) && self.peer_caps.is_none() {
