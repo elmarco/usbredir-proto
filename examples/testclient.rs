@@ -1,6 +1,8 @@
+use std::io::{IsTerminal, Write};
 use std::process;
 
 use futures::{SinkExt, StreamExt};
+use rustyline_async::{Readline, ReadlineEvent, SharedWriter};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
@@ -51,8 +53,37 @@ impl Client {
     }
 }
 
-fn print_device_connect(info: &usbredir_proto::DeviceConnectInfo) {
-    println!(
+enum InputEvent {
+    Line(String),
+    Eof,
+    Interrupted,
+    Error(String),
+}
+
+enum Output {
+    Shared(SharedWriter),
+    Stdout(std::io::Stdout),
+}
+
+impl Write for Output {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self {
+            Output::Shared(w) => w.write(buf),
+            Output::Stdout(w) => w.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            Output::Shared(w) => w.flush(),
+            Output::Stdout(w) => w.flush(),
+        }
+    }
+}
+
+fn print_device_connect(w: &mut impl Write, info: &usbredir_proto::DeviceConnectInfo) {
+    let _ = writeln!(
+        w,
         "DeviceConnect: speed={:?} class={:#04x} subclass={:#04x} protocol={:#04x} \
          vendor={:#06x} product={:#06x} version_bcd={:#06x}",
         info.speed,
@@ -66,15 +97,17 @@ fn print_device_connect(info: &usbredir_proto::DeviceConnectInfo) {
 }
 
 fn print_interface_info(
+    w: &mut impl Write,
     interface_count: u32,
     interface: &[u8; 32],
     interface_class: &[u8; 32],
     interface_subclass: &[u8; 32],
     interface_protocol: &[u8; 32],
 ) {
-    println!("InterfaceInfo: {interface_count} interface(s)");
+    let _ = writeln!(w, "InterfaceInfo: {interface_count} interface(s)");
     for i in 0..interface_count as usize {
-        println!(
+        let _ = writeln!(
+            w,
             "  iface {}: number={} class={:#04x} subclass={:#04x} protocol={:#04x}",
             i, interface[i], interface_class[i], interface_subclass[i], interface_protocol[i],
         );
@@ -82,26 +115,28 @@ fn print_interface_info(
 }
 
 fn print_ep_info(
+    w: &mut impl Write,
     ep_type: &[TransferType; 32],
     interval: &[u8; 32],
     interface: &[u8; 32],
     max_packet_size: &[u16; 32],
 ) {
-    println!("EpInfo:");
+    let _ = writeln!(w, "EpInfo:");
     for i in 0..32 {
         if ep_type[i] == TransferType::Invalid {
             continue;
         }
         let dir = if i >= 16 { "IN" } else { "OUT" };
         let num = i % 16;
-        println!(
+        let _ = writeln!(
+            w,
             "  ep {num:2} {dir:3}: type={:?} interval={} interface={} max_packet_size={}",
             ep_type[i], interval[i], interface[i], max_packet_size[i],
         );
     }
 }
 
-fn print_control_response(d: &DataPacket) {
+fn print_control_response(w: &mut impl Write, d: &DataPacket) {
     if let DataKind::Control {
         request,
         requesttype,
@@ -110,7 +145,8 @@ fn print_control_response(d: &DataPacket) {
         length,
     } = &d.kind
     {
-        println!(
+        let _ = writeln!(
+            w,
             "ControlPacket: id={} endpoint={} status={:?} request={} requesttype={:#04x} \
              value={} index={} length={} data_len={}",
             d.id,
@@ -124,27 +160,47 @@ fn print_control_response(d: &DataPacket) {
             d.data.len(),
         );
         if !d.data.is_empty() {
-            println!("  data: {:02x?}", d.data.as_ref());
+            let _ = writeln!(w, "  data: {:02x?}", d.data.as_ref());
         }
     }
 }
 
-fn print_help() {
-    println!("Commands:");
-    println!("  ctrl <endpoint> <request> <requesttype> <value> <index> <length> [data...]");
-    println!("  alt <interface> <alt>          - set alt setting");
-    println!("  int_start <endpoint>           - start interrupt receiving");
-    println!("  int_stop <endpoint>            - stop interrupt receiving");
-    println!("  iso_start <endpoint> <pkts> <urbs> - start iso stream");
-    println!("  iso_stop <endpoint>            - stop iso stream");
-    println!("  wait <seconds>                 - wait and print incoming data");
-    println!("  help");
-    println!("  quit");
+fn print_help(w: &mut impl Write) {
+    let _ = writeln!(w, "Commands:");
+    let _ = writeln!(
+        w,
+        "  ctrl <endpoint> <request> <requesttype> <value> <index> <length> [data...]"
+    );
+    let _ = writeln!(w, "  alt <interface> <alt>          - set alt setting");
+    let _ = writeln!(
+        w,
+        "  int_start <endpoint>           - start interrupt receiving"
+    );
+    let _ = writeln!(
+        w,
+        "  int_stop <endpoint>            - stop interrupt receiving"
+    );
+    let _ = writeln!(
+        w,
+        "  iso_start <endpoint> <pkts> <urbs> - start iso stream"
+    );
+    let _ = writeln!(w, "  iso_stop <endpoint>            - stop iso stream");
+    let _ = writeln!(
+        w,
+        "  wait <seconds>                 - wait and print incoming data"
+    );
+    let _ = writeln!(w, "  help");
+    let _ = writeln!(w, "  quit");
 }
 
-fn parse_ctrl_command(client: &mut Client, parts: &[&str]) -> Option<Packet> {
+fn parse_ctrl_command(
+    w: &mut impl Write,
+    client: &mut Client,
+    parts: &[&str],
+) -> Option<Packet> {
     if parts.len() < 7 {
-        eprintln!(
+        let _ = writeln!(
+            w,
             "Usage: ctrl <endpoint> <request> <requesttype> <value> <index> <length> [data...]"
         );
         return None;
@@ -229,8 +285,28 @@ async fn main() {
     let codec = UsbredirCodec::<Guest>::new(config);
     let mut framed = Framed::new(stream, codec);
 
-    let stdin = BufReader::new(tokio::io::stdin());
-    let mut lines = stdin.lines();
+    let interactive = std::io::stdin().is_terminal();
+
+    let mut rl;
+    let mut lines;
+    let mut w;
+
+    if interactive {
+        let (readline, writer) = match Readline::new("usbredir> ".to_owned()) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("Failed to initialize readline: {e}");
+                process::exit(1);
+            }
+        };
+        rl = Some(readline);
+        lines = None;
+        w = Output::Shared(writer);
+    } else {
+        rl = None;
+        lines = Some(BufReader::new(tokio::io::stdin()).lines());
+        w = Output::Stdout(std::io::stdout());
+    }
 
     let mut client = Client::new();
     let mut pending_commands: std::collections::VecDeque<String> =
@@ -238,59 +314,86 @@ async fn main() {
     let mut stdin_eof = false;
 
     loop {
-        tokio::select! {
+        let input_event = tokio::select! {
             result = framed.next() => {
                 match result {
                     Some(Ok(packet)) => {
-                        if let Some(responses) = handle_packet(&mut client, &packet) {
+                        let (responses, disconnect) = handle_packet(&mut client, &packet, &mut w);
+                        if let Some(responses) = responses {
                             for pkt in responses {
                                 if let Err(e) = framed.send(pkt).await {
-                                    eprintln!("Send error: {e}");
+                                    let _ = writeln!(w, "Send error: {e}");
                                     return;
                                 }
                             }
                         }
-                        if client.phase == Phase::Interactive
-                            && !drain_pending(&mut client, &mut framed, &mut pending_commands, stdin_eof).await {
+                        if disconnect {
                             return;
                         }
+                        if client.phase == Phase::Interactive
+                            && !drain_pending(&mut client, &mut framed, &mut pending_commands, stdin_eof, &mut w).await {
+                            return;
+                        }
+                        continue;
                     }
                     Some(Err(e)) => {
-                        eprintln!("Protocol error: {e}");
+                        let _ = writeln!(w, "Protocol error: {e}");
+                        continue;
                     }
                     None => {
-                        println!("Connection closed.");
+                        let _ = writeln!(w, "Connection closed.");
                         return;
                     }
                 }
             }
-            result = lines.next_line(), if !stdin_eof => {
+            result = async { rl.as_mut().unwrap().readline().await }, if !stdin_eof && rl.is_some() => {
                 match result {
-                    Ok(Some(line)) => {
-                        let line = line.trim().to_string();
-                        if line.is_empty() {
-                            continue;
-                        }
-                        if client.phase == Phase::Interactive {
-                            if !process_command(&mut client, &mut framed, &line).await {
-                                return;
-                            }
-                        } else {
-                            pending_commands.push_back(line);
-                        }
+                    Ok(ReadlineEvent::Line(line)) => {
+                        rl.as_mut().unwrap().add_history_entry(line.clone());
+                        InputEvent::Line(line)
                     }
-                    Ok(None) => {
-                        if client.phase == Phase::Interactive || pending_commands.is_empty() {
-                            println!("EOF on stdin.");
-                            return;
-                        }
-                        stdin_eof = true;
-                    }
-                    Err(e) => {
-                        eprintln!("stdin error: {e}");
+                    Ok(ReadlineEvent::Eof) => InputEvent::Eof,
+                    Ok(ReadlineEvent::Interrupted) => InputEvent::Interrupted,
+                    Err(e) => InputEvent::Error(e.to_string()),
+                }
+            }
+            result = async { lines.as_mut().unwrap().next_line().await }, if !stdin_eof && lines.is_some() => {
+                match result {
+                    Ok(Some(line)) => InputEvent::Line(line),
+                    Ok(None) => InputEvent::Eof,
+                    Err(e) => InputEvent::Error(e.to_string()),
+                }
+            }
+        };
+
+        match input_event {
+            InputEvent::Line(line) => {
+                let line = line.trim().to_string();
+                if line.is_empty() {
+                    continue;
+                }
+                if client.phase == Phase::Interactive {
+                    if !process_command(&mut client, &mut framed, &line, &mut w).await {
                         return;
                     }
+                } else {
+                    pending_commands.push_back(line);
                 }
+            }
+            InputEvent::Eof => {
+                if client.phase == Phase::Interactive || pending_commands.is_empty() {
+                    let _ = writeln!(w, "EOF on stdin.");
+                    return;
+                }
+                stdin_eof = true;
+            }
+            InputEvent::Interrupted => {
+                let _ = writeln!(w, "Interrupted.");
+                return;
+            }
+            InputEvent::Error(e) => {
+                let _ = writeln!(w, "Input error: {e}");
+                return;
             }
         }
     }
@@ -301,14 +404,15 @@ async fn drain_pending(
     framed: &mut Framed<TcpStream, UsbredirCodec<Guest>>,
     pending: &mut std::collections::VecDeque<String>,
     stdin_eof: bool,
+    w: &mut impl Write,
 ) -> bool {
     while let Some(line) = pending.pop_front() {
-        if !process_command(client, framed, &line).await {
+        if !process_command(client, framed, &line, w).await {
             return false;
         }
     }
     if stdin_eof {
-        println!("EOF on stdin.");
+        let _ = writeln!(w, "EOF on stdin.");
         return false;
     }
     true
@@ -318,103 +422,107 @@ async fn process_command(
     client: &mut Client,
     framed: &mut Framed<TcpStream, UsbredirCodec<Guest>>,
     line: &str,
+    w: &mut impl Write,
 ) -> bool {
     let parts: Vec<&str> = line.split_whitespace().collect();
     match parts[0] {
         "quit" | "exit" => {
-            println!("Bye.");
+            let _ = writeln!(w, "Bye.");
             return false;
         }
-        "help" => print_help(),
+        "help" => print_help(w),
         "ctrl" => {
-            if let Some(pkt) = parse_ctrl_command(client, &parts) {
+            if let Some(pkt) = parse_ctrl_command(w, client, &parts) {
                 if let Err(e) = framed.send(pkt).await {
-                    eprintln!("Send error: {e}");
+                    let _ = writeln!(w, "Send error: {e}");
                     return false;
                 }
             }
         }
         "alt" => {
             if parts.len() < 3 {
-                eprintln!("Usage: alt <interface> <alt>");
+                let _ = writeln!(w, "Usage: alt <interface> <alt>");
             } else if let (Some(iface), Some(alt)) =
                 (parse_int::<u8>(parts[1]), parse_int::<u8>(parts[2]))
             {
                 let id = client.alloc_id();
-                println!("Sending SetAltSetting(interface={iface}, alt={alt})");
+                let _ = writeln!(w, "Sending SetAltSetting(interface={iface}, alt={alt})");
                 if let Err(e) = framed.send(Packet::set_alt_setting(id, iface, alt)).await {
-                    eprintln!("Send error: {e}");
+                    let _ = writeln!(w, "Send error: {e}");
                     return false;
                 }
             }
         }
         "int_start" => {
             if parts.len() < 2 {
-                eprintln!("Usage: int_start <endpoint>");
+                let _ = writeln!(w, "Usage: int_start <endpoint>");
             } else if let Some(ep) = parse_int::<u8>(parts[1]) {
                 let id = client.alloc_id();
-                println!("Sending StartInterruptReceiving(endpoint={ep:#04x})");
+                let _ = writeln!(w, "Sending StartInterruptReceiving(endpoint={ep:#04x})");
                 if let Err(e) = framed
                     .send(Packet::start_interrupt_receiving(id, Endpoint::new(ep)))
                     .await
                 {
-                    eprintln!("Send error: {e}");
+                    let _ = writeln!(w, "Send error: {e}");
                     return false;
                 }
             }
         }
         "int_stop" => {
             if parts.len() < 2 {
-                eprintln!("Usage: int_stop <endpoint>");
+                let _ = writeln!(w, "Usage: int_stop <endpoint>");
             } else if let Some(ep) = parse_int::<u8>(parts[1]) {
                 let id = client.alloc_id();
-                println!("Sending StopInterruptReceiving(endpoint={ep:#04x})");
+                let _ = writeln!(w, "Sending StopInterruptReceiving(endpoint={ep:#04x})");
                 if let Err(e) = framed
                     .send(Packet::stop_interrupt_receiving(id, Endpoint::new(ep)))
                     .await
                 {
-                    eprintln!("Send error: {e}");
+                    let _ = writeln!(w, "Send error: {e}");
                     return false;
                 }
             }
         }
         "iso_start" => {
             if parts.len() < 4 {
-                eprintln!("Usage: iso_start <endpoint> <pkts_per_urb> <no_urbs>");
+                let _ = writeln!(w, "Usage: iso_start <endpoint> <pkts_per_urb> <no_urbs>");
             } else if let (Some(ep), Some(pkts), Some(urbs)) = (
                 parse_int::<u8>(parts[1]),
                 parse_int::<u8>(parts[2]),
                 parse_int::<u8>(parts[3]),
             ) {
                 let id = client.alloc_id();
-                println!("Sending StartIsoStream(endpoint={ep:#04x}, pkts={pkts}, urbs={urbs})");
+                let _ = writeln!(
+                    w,
+                    "Sending StartIsoStream(endpoint={ep:#04x}, pkts={pkts}, urbs={urbs})"
+                );
                 if let Err(e) = framed
                     .send(Packet::start_iso_stream(id, Endpoint::new(ep), pkts, urbs))
                     .await
                 {
-                    eprintln!("Send error: {e}");
+                    let _ = writeln!(w, "Send error: {e}");
                     return false;
                 }
             }
         }
         "iso_stop" => {
             if parts.len() < 2 {
-                eprintln!("Usage: iso_stop <endpoint>");
+                let _ = writeln!(w, "Usage: iso_stop <endpoint>");
             } else if let Some(ep) = parse_int::<u8>(parts[1]) {
                 let id = client.alloc_id();
-                println!("Sending StopIsoStream(endpoint={ep:#04x})");
+                let _ = writeln!(w, "Sending StopIsoStream(endpoint={ep:#04x})");
                 if let Err(e) = framed
                     .send(Packet::stop_iso_stream(id, Endpoint::new(ep)))
                     .await
                 {
-                    eprintln!("Send error: {e}");
+                    let _ = writeln!(w, "Send error: {e}");
                     return false;
                 }
             }
         }
         "wait" => {
             let secs: u64 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(3);
-            println!("Waiting {secs}s for incoming data...");
+            let _ = writeln!(w, "Waiting {secs}s for incoming data...");
             let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(secs);
             let mut count = 0usize;
             let mut bytes = 0usize;
@@ -427,13 +535,13 @@ async fn process_command(
                                     bytes += d.data.len();
                                 }
                                 count += 1;
-                                handle_packet(client, packet);
+                                handle_packet(client, packet, w);
                             }
                             Some(Err(e)) => {
-                                eprintln!("Protocol error: {e}");
+                                let _ = writeln!(w, "Protocol error: {e}");
                             }
                             None => {
-                                println!("Connection closed.");
+                                let _ = writeln!(w, "Connection closed.");
                                 return false;
                             }
                         }
@@ -443,33 +551,40 @@ async fn process_command(
                     }
                 }
             }
-            println!("Received {count} packets ({bytes} data bytes) in {secs}s");
+            let _ = writeln!(w, "Received {count} packets ({bytes} data bytes) in {secs}s");
         }
         other => {
-            eprintln!("Unknown command: {other}. Type 'help' for help.");
+            let _ = writeln!(w, "Unknown command: {other}. Type 'help' for help.");
         }
     }
     true
 }
 
-fn handle_packet(client: &mut Client, packet: &Packet) -> Option<Vec<Packet>> {
+fn handle_packet(
+    client: &mut Client,
+    packet: &Packet,
+    w: &mut impl Write,
+) -> (Option<Vec<Packet>>, bool) {
     match packet {
         Packet::Hello { version, caps } => {
-            println!("Hello from server: version={version:?}, caps=[{caps}]");
+            let _ = writeln!(w, "Hello from server: version={version:?}, caps=[{caps}]");
             if client.phase != Phase::WaitHello {
-                eprintln!("Unexpected Hello");
-                return None;
+                let _ = writeln!(w, "Unexpected Hello");
+                return (None, false);
             }
 
             let reset_id = client.alloc_id();
             client.get_config_id = client.alloc_id();
             client.phase = Phase::WaitGetConfig;
 
-            println!("Sending Reset + GetConfiguration");
-            Some(vec![
-                Packet::reset(reset_id),
-                Packet::get_configuration(client.get_config_id),
-            ])
+            let _ = writeln!(w, "Sending Reset + GetConfiguration");
+            (
+                Some(vec![
+                    Packet::reset(reset_id),
+                    Packet::get_configuration(client.get_config_id),
+                ]),
+                false,
+            )
         }
 
         Packet::Request(req) => match &req.kind {
@@ -477,7 +592,8 @@ fn handle_packet(client: &mut Client, packet: &Packet) -> Option<Vec<Packet>> {
                 status,
                 configuration,
             } => {
-                println!(
+                let _ = writeln!(
+                    w,
                     "ConfigurationStatus: id={} status={status:?} configuration={configuration}",
                     req.id
                 );
@@ -486,19 +602,28 @@ fn handle_packet(client: &mut Client, packet: &Packet) -> Option<Vec<Packet>> {
                     Phase::WaitGetConfig if req.id == client.get_config_id => {
                         client.set_config_id = client.alloc_id();
                         client.phase = Phase::WaitSetConfig;
-                        println!("Sending SetConfiguration(config={configuration})");
-                        Some(vec![Packet::set_configuration(
-                            client.set_config_id,
-                            *configuration,
-                        )])
+                        let _ = writeln!(
+                            w,
+                            "Sending SetConfiguration(config={configuration})"
+                        );
+                        (
+                            Some(vec![Packet::set_configuration(
+                                client.set_config_id,
+                                *configuration,
+                            )]),
+                            false,
+                        )
                     }
                     Phase::WaitSetConfig if req.id == client.set_config_id => {
                         client.get_alt_id = client.alloc_id();
                         client.phase = Phase::WaitGetAlt;
-                        println!("Sending GetAltSetting(interface=0)");
-                        Some(vec![Packet::get_alt_setting(client.get_alt_id, 0)])
+                        let _ = writeln!(w, "Sending GetAltSetting(interface=0)");
+                        (
+                            Some(vec![Packet::get_alt_setting(client.get_alt_id, 0)]),
+                            false,
+                        )
                     }
-                    _ => None,
+                    _ => (None, false),
                 }
             }
 
@@ -507,7 +632,8 @@ fn handle_packet(client: &mut Client, packet: &Packet) -> Option<Vec<Packet>> {
                 interface,
                 alt,
             } => {
-                println!(
+                let _ = writeln!(
+                    w,
                     "AltSettingStatus: id={} status={status:?} interface={interface} alt={alt}",
                     req.id
                 );
@@ -516,72 +642,80 @@ fn handle_packet(client: &mut Client, packet: &Packet) -> Option<Vec<Packet>> {
                     Phase::WaitGetAlt if req.id == client.get_alt_id => {
                         client.set_alt_id = client.alloc_id();
                         client.phase = Phase::WaitSetAlt;
-                        println!("Sending SetAltSetting(interface={interface}, alt={alt})");
-                        Some(vec![Packet::set_alt_setting(
-                            client.set_alt_id,
-                            *interface,
-                            *alt,
-                        )])
+                        let _ = writeln!(
+                            w,
+                            "Sending SetAltSetting(interface={interface}, alt={alt})"
+                        );
+                        (
+                            Some(vec![Packet::set_alt_setting(
+                                client.set_alt_id,
+                                *interface,
+                                *alt,
+                            )]),
+                            false,
+                        )
                     }
                     Phase::WaitSetAlt if req.id == client.set_alt_id => {
                         client.phase = Phase::Interactive;
-                        println!("Handshake complete. Entering interactive mode.");
-                        print_help();
-                        None
+                        let _ = writeln!(w, "Handshake complete. Entering interactive mode.");
+                        print_help(w);
+                        (None, false)
                     }
-                    _ => None,
+                    _ => (None, false),
                 }
             }
 
             other => {
-                println!("Request: {other}");
-                None
+                let _ = writeln!(w, "Request: {other}");
+                (None, false)
             }
         },
 
         Packet::DeviceConnect(info) => {
-            print_device_connect(info);
-            None
+            print_device_connect(w, info);
+            (None, false)
         }
 
         Packet::DeviceDisconnect => {
-            println!("DeviceDisconnect");
-            process::exit(0);
+            let _ = writeln!(w, "DeviceDisconnect");
+            (None, true)
         }
 
         Packet::InterfaceInfo(info) => {
             print_interface_info(
+                w,
                 info.interface_count,
                 &info.interface,
                 &info.interface_class,
                 &info.interface_subclass,
                 &info.interface_protocol,
             );
-            None
+            (None, false)
         }
 
         Packet::EpInfo(info) => {
             print_ep_info(
+                w,
                 &info.ep_type,
                 &info.interval,
                 &info.interface,
                 &info.max_packet_size,
             );
-            None
+            (None, false)
         }
 
         Packet::Data(d) => {
             if matches!(d.kind, DataKind::Control { .. }) {
-                print_control_response(d);
+                print_control_response(w, d);
             } else {
-                println!("Data: {d}");
+                let _ = writeln!(w, "Data: {d}");
             }
-            None
+            (None, false)
         }
 
         other => {
-            println!("Received: {other}");
-            None
+            let _ = writeln!(w, "Received: {other}");
+            (None, false)
         }
     }
 }
