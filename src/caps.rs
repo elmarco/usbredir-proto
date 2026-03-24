@@ -1,3 +1,5 @@
+use core::fmt;
+
 /// Number of u32 words in the capabilities bitset.
 pub const CAPS_SIZE: usize = 1;
 
@@ -27,6 +29,35 @@ pub enum Cap {
     BulkLength32Bits = 6,
     /// Enable `StartBulkReceiving` / `BufferedBulkPacket` for host-buffered bulk IN transfers.
     BulkReceiving = 7,
+}
+
+impl Cap {
+    /// All known capability variants, in bit order.
+    pub const ALL: [Cap; 8] = [
+        Cap::BulkStreams,
+        Cap::ConnectDeviceVersion,
+        Cap::Filter,
+        Cap::DeviceDisconnectAck,
+        Cap::EpInfoMaxPacketSize,
+        Cap::Ids64Bits,
+        Cap::BulkLength32Bits,
+        Cap::BulkReceiving,
+    ];
+}
+
+impl fmt::Display for Cap {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Cap::BulkStreams => write!(f, "bulk-streams"),
+            Cap::ConnectDeviceVersion => write!(f, "connect-device-version"),
+            Cap::Filter => write!(f, "filter"),
+            Cap::DeviceDisconnectAck => write!(f, "device-disconnect-ack"),
+            Cap::EpInfoMaxPacketSize => write!(f, "ep-info-max-packet-size"),
+            Cap::Ids64Bits => write!(f, "64bit-ids"),
+            Cap::BulkLength32Bits => write!(f, "32bit-bulk-length"),
+            Cap::BulkReceiving => write!(f, "bulk-receiving"),
+        }
+    }
 }
 
 /// Bitset of protocol capabilities, exchanged during the Hello handshake.
@@ -150,6 +181,28 @@ impl Caps {
             }
         }
         true
+    }
+
+    /// Iterate over all set capabilities (known variants only).
+    pub fn iter(&self) -> impl Iterator<Item = Cap> + '_ {
+        Cap::ALL.iter().copied().filter(|cap| self.has(*cap))
+    }
+}
+
+impl fmt::Display for Caps {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut first = true;
+        for cap in self.iter() {
+            if !first {
+                write!(f, ", ")?;
+            }
+            write!(f, "{cap}")?;
+            first = false;
+        }
+        if first {
+            write!(f, "(none)")?;
+        }
+        Ok(())
     }
 }
 

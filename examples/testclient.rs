@@ -455,7 +455,7 @@ async fn process_command(
 fn handle_packet(client: &mut Client, packet: &Packet) -> Option<Vec<Packet>> {
     match packet {
         Packet::Hello { version, caps } => {
-            println!("Hello from server: version={version:?}, caps={caps:?}");
+            println!("Hello from server: version={version:?}, caps=[{caps}]");
             if client.phase != Phase::WaitHello {
                 eprintln!("Unexpected Hello");
                 return None;
