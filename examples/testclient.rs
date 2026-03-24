@@ -1,9 +1,15 @@
 use std::io::{IsTerminal, Write};
+use std::path::PathBuf;
+use std::pin::Pin;
 use std::process;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::task::{Context, Poll};
 
+use crossterm::{cursor, execute, style, terminal};
 use futures::{SinkExt, StreamExt};
 use rustyline_async::{Readline, ReadlineEvent, SharedWriter};
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, BufReader, ReadBuf};
 use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
 
@@ -14,6 +20,96 @@ use usbredir_proto::{
 };
 
 const DEFAULT_PORT: u16 = 4000;
+
+fn history_path() -> PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("usbredir")
+        .join("testclient.history")
+}
+
+fn load_history(rl: &mut Readline) {
+    let path = history_path();
+    if let Ok(contents) = std::fs::read_to_string(&path) {
+        let entries = contents.lines().map(String::from);
+        rl.set_history_entries(entries);
+    }
+}
+
+fn save_history(rl: &Readline) {
+    let path = history_path();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let entries: Vec<&str> = rl.get_history_entries().iter().map(|s| s.as_str()).collect();
+    let _ = std::fs::write(&path, entries.join("\n"));
+}
+
+#[derive(Clone)]
+struct ByteCounters {
+    rx: Arc<AtomicU64>,
+    tx: Arc<AtomicU64>,
+}
+
+impl ByteCounters {
+    fn new() -> Self {
+        Self {
+            rx: Arc::new(AtomicU64::new(0)),
+            tx: Arc::new(AtomicU64::new(0)),
+        }
+    }
+}
+
+struct CountingStream {
+    inner: TcpStream,
+    counters: ByteCounters,
+}
+
+impl CountingStream {
+    fn new(inner: TcpStream, counters: ByteCounters) -> Self {
+        Self { inner, counters }
+    }
+}
+
+impl AsyncRead for CountingStream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        let me = self.get_mut();
+        let before = buf.filled().len();
+        let result = Pin::new(&mut me.inner).poll_read(cx, buf);
+        if let Poll::Ready(Ok(())) = &result {
+            let n = buf.filled().len() - before;
+            me.counters.rx.fetch_add(n as u64, Ordering::Relaxed);
+        }
+        result
+    }
+}
+
+impl AsyncWrite for CountingStream {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        let me = self.get_mut();
+        let result = Pin::new(&mut me.inner).poll_write(cx, buf);
+        if let Poll::Ready(Ok(n)) = &result {
+            me.counters.tx.fetch_add(*n as u64, Ordering::Relaxed);
+        }
+        result
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.get_mut().inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.get_mut().inner).poll_shutdown(cx)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Phase {
@@ -78,6 +174,16 @@ impl Write for Output {
             Output::Shared(w) => w.flush(),
             Output::Stdout(w) => w.flush(),
         }
+    }
+}
+
+fn format_rate(bytes_per_sec: f64) -> String {
+    if bytes_per_sec >= 1_000_000.0 {
+        format!("{:.1}MB/s", bytes_per_sec / 1_000_000.0)
+    } else if bytes_per_sec >= 1_000.0 {
+        format!("{:.1}kB/s", bytes_per_sec / 1_000.0)
+    } else {
+        format!("{:.0}B/s", bytes_per_sec)
     }
 }
 
@@ -278,6 +384,9 @@ async fn main() {
     };
     println!("Connected.");
 
+    let counters = ByteCounters::new();
+    let stream = CountingStream::new(stream, counters.clone());
+
     let config = ParserConfig::new("usbredir-testclient-rs 0.1")
         .cap(Cap::EpInfoMaxPacketSize)
         .cap(Cap::Ids64Bits);
@@ -299,6 +408,8 @@ async fn main() {
                 process::exit(1);
             }
         };
+        let mut readline = readline;
+        load_history(&mut readline);
         rl = Some(readline);
         lines = None;
         w = Output::Shared(writer);
@@ -313,6 +424,11 @@ async fn main() {
         std::collections::VecDeque::new();
     let mut stdin_eof = false;
 
+    let mut stats_interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
+    stats_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut prev_rx: u64 = 0;
+    let mut prev_tx: u64 = 0;
+
     loop {
         let input_event = tokio::select! {
             result = framed.next() => {
@@ -323,16 +439,16 @@ async fn main() {
                             for pkt in responses {
                                 if let Err(e) = framed.send(pkt).await {
                                     let _ = writeln!(w, "Send error: {e}");
-                                    return;
+                                    break;
                                 }
                             }
                         }
                         if disconnect {
-                            return;
+                            break;
                         }
                         if client.phase == Phase::Interactive
                             && !drain_pending(&mut client, &mut framed, &mut pending_commands, stdin_eof, &mut w).await {
-                            return;
+                            break;
                         }
                         continue;
                     }
@@ -342,7 +458,7 @@ async fn main() {
                     }
                     None => {
                         let _ = writeln!(w, "Connection closed.");
-                        return;
+                        break;
                     }
                 }
             }
@@ -364,6 +480,29 @@ async fn main() {
                     Err(e) => InputEvent::Error(e.to_string()),
                 }
             }
+            _ = stats_interval.tick(), if interactive => {
+                let rx = counters.rx.load(Ordering::Relaxed);
+                let tx = counters.tx.load(Ordering::Relaxed);
+                let rx_rate = rx.saturating_sub(prev_rx) as f64;
+                let tx_rate = tx.saturating_sub(prev_tx) as f64;
+                prev_rx = rx;
+                prev_tx = tx;
+                let stats = format!("↓{} ↑{}", format_rate(rx_rate), format_rate(tx_rate));
+                if let Ok((term_w, _)) = terminal::size() {
+                    let col = (term_w as usize).saturating_sub(stats.len());
+                    let mut stdout = std::io::stdout();
+                    let _ = execute!(
+                        stdout,
+                        cursor::SavePosition,
+                        cursor::MoveToColumn(col as u16),
+                        style::SetForegroundColor(style::Color::DarkGrey),
+                        style::Print(&stats),
+                        style::ResetColor,
+                        cursor::RestorePosition,
+                    );
+                }
+                continue;
+            }
         };
 
         match input_event {
@@ -374,7 +513,7 @@ async fn main() {
                 }
                 if client.phase == Phase::Interactive {
                     if !process_command(&mut client, &mut framed, &line, &mut w).await {
-                        return;
+                        break;
                     }
                 } else {
                     pending_commands.push_back(line);
@@ -383,25 +522,29 @@ async fn main() {
             InputEvent::Eof => {
                 if client.phase == Phase::Interactive || pending_commands.is_empty() {
                     let _ = writeln!(w, "EOF on stdin.");
-                    return;
+                    break;
                 }
                 stdin_eof = true;
             }
             InputEvent::Interrupted => {
                 let _ = writeln!(w, "Interrupted.");
-                return;
+                break;
             }
             InputEvent::Error(e) => {
                 let _ = writeln!(w, "Input error: {e}");
-                return;
+                break;
             }
         }
+    }
+
+    if let Some(ref rl) = rl {
+        save_history(rl);
     }
 }
 
 async fn drain_pending(
     client: &mut Client,
-    framed: &mut Framed<TcpStream, UsbredirCodec<Guest>>,
+    framed: &mut Framed<CountingStream, UsbredirCodec<Guest>>,
     pending: &mut std::collections::VecDeque<String>,
     stdin_eof: bool,
     w: &mut impl Write,
@@ -420,7 +563,7 @@ async fn drain_pending(
 
 async fn process_command(
     client: &mut Client,
-    framed: &mut Framed<TcpStream, UsbredirCodec<Guest>>,
+    framed: &mut Framed<CountingStream, UsbredirCodec<Guest>>,
     line: &str,
     w: &mut impl Write,
 ) -> bool {
