@@ -42,7 +42,11 @@ fn save_history(rl: &Readline) {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let entries: Vec<&str> = rl.get_history_entries().iter().map(|s| s.as_str()).collect();
+    let entries: Vec<&str> = rl
+        .get_history_entries()
+        .iter()
+        .map(|s| s.as_str())
+        .collect();
     let _ = std::fs::write(&path, entries.join("\n"));
 }
 
@@ -148,16 +152,48 @@ struct UvcControl {
 }
 
 const UVC_CONTROLS: &[UvcControl] = &[
-    UvcControl { name: "brightness", selector: 0x02, entity: UvcEntity::ProcUnit, data_len: 2 },
-    UvcControl { name: "contrast", selector: 0x03, entity: UvcEntity::ProcUnit, data_len: 2 },
-    UvcControl { name: "exposure-time", selector: 0x04, entity: UvcEntity::CameraTerm, data_len: 4 },
-    UvcControl { name: "focus-abs", selector: 0x06, entity: UvcEntity::CameraTerm, data_len: 2 },
-    UvcControl { name: "focus-auto", selector: 0x08, entity: UvcEntity::CameraTerm, data_len: 1 },
-    UvcControl { name: "ae-mode", selector: 0x02, entity: UvcEntity::CameraTerm, data_len: 1 },
+    UvcControl {
+        name: "brightness",
+        selector: 0x02,
+        entity: UvcEntity::ProcUnit,
+        data_len: 2,
+    },
+    UvcControl {
+        name: "contrast",
+        selector: 0x03,
+        entity: UvcEntity::ProcUnit,
+        data_len: 2,
+    },
+    UvcControl {
+        name: "exposure-time",
+        selector: 0x04,
+        entity: UvcEntity::CameraTerm,
+        data_len: 4,
+    },
+    UvcControl {
+        name: "focus-abs",
+        selector: 0x06,
+        entity: UvcEntity::CameraTerm,
+        data_len: 2,
+    },
+    UvcControl {
+        name: "focus-auto",
+        selector: 0x08,
+        entity: UvcEntity::CameraTerm,
+        data_len: 1,
+    },
+    UvcControl {
+        name: "ae-mode",
+        selector: 0x02,
+        entity: UvcEntity::CameraTerm,
+        data_len: 1,
+    },
 ];
 
 fn find_uvc_control(name: &str) -> Option<&'static UvcControl> {
-    UVC_CONTROLS.iter().find(|c| c.name.eq_ignore_ascii_case(name))
+    UVC_CONTROLS
+        .iter()
+        .find(|c| c.name.eq_ignore_ascii_case(name))
 }
 
 fn uvc_request_name(req: u8) -> &'static str {
@@ -400,10 +436,7 @@ fn print_help(w: &mut impl Write) {
         w,
         "  int_stop <endpoint>            - stop interrupt receiving"
     );
-    let _ = writeln!(
-        w,
-        "  iso_start <endpoint> <pkts> <urbs> - start iso stream"
-    );
+    let _ = writeln!(w, "  iso_start <endpoint> <pkts> <urbs> - start iso stream");
     let _ = writeln!(w, "  iso_stop <endpoint>            - stop iso stream");
     let _ = writeln!(
         w,
@@ -413,18 +446,18 @@ fn print_help(w: &mut impl Write) {
     let _ = writeln!(w, "  quit");
     let _ = writeln!(w);
     let _ = writeln!(w, "UVC commands:");
-    let _ = writeln!(w, "  uvc-info                       - show detected UVC state");
-    let _ = writeln!(w, "  uvc-func <index>               - switch active UVC function");
+    let _ = writeln!(
+        w,
+        "  uvc-info                       - show detected UVC state"
+    );
+    let _ = writeln!(
+        w,
+        "  uvc-func <index>               - switch active UVC function"
+    );
     let _ = writeln!(w, "  uvc-set-ids [ct=N] [pu=N]      - override entity IDs");
-    let _ = writeln!(
-        w,
-        "  uvc-get <ctrl> [cur|min|max|def|res|info|all]"
-    );
+    let _ = writeln!(w, "  uvc-get <ctrl> [cur|min|max|def|res|info|all]");
     let _ = writeln!(w, "  uvc-set <ctrl> <value>         - set control value");
-    let _ = writeln!(
-        w,
-        "  uvc-probe [format=N] [frame=N] [interval=N]"
-    );
+    let _ = writeln!(w, "  uvc-probe [format=N] [frame=N] [interval=N]");
     let _ = writeln!(w, "  uvc-commit                     - commit last probe");
     let _ = writeln!(
         w,
@@ -459,9 +492,12 @@ fn uvc_detect_interfaces(
     for i in 0..interface_count as usize {
         if interface_class[i] == UVC_CLASS && interface_subclass[i] == UVC_SC_VIDEOSTREAMING {
             // Associate VS with the nearest preceding VC
-            if let Some(func) = uvc.functions.iter_mut().rev().find(|f| {
-                f.vs_iface.is_none() && f.vc_iface < interface[i]
-            }) {
+            if let Some(func) = uvc
+                .functions
+                .iter_mut()
+                .rev()
+                .find(|f| f.vs_iface.is_none() && f.vc_iface < interface[i])
+            {
                 func.vs_iface = Some(interface[i]);
             }
         }
@@ -522,11 +558,7 @@ fn parse_uvc_set_ids(w: &mut impl Write, uvc: &mut UvcState, parts: &[&str]) {
     }
 }
 
-fn build_uvc_get_packets(
-    client: &mut Client,
-    ctrl: &UvcControl,
-    requests: &[u8],
-) -> Vec<Packet> {
+fn build_uvc_get_packets(client: &mut Client, ctrl: &UvcControl, requests: &[u8]) -> Vec<Packet> {
     let vc_iface = client.uvc.vc_iface().unwrap_or(0);
     let entity_id = client.uvc.entity_id(ctrl.entity);
     let value = (ctrl.selector as u16) << 8;
@@ -560,11 +592,7 @@ fn build_uvc_get_packets(
         .collect()
 }
 
-fn build_uvc_set_packet(
-    client: &mut Client,
-    ctrl: &UvcControl,
-    value_int: u64,
-) -> Packet {
+fn build_uvc_set_packet(client: &mut Client, ctrl: &UvcControl, value_int: u64) -> Packet {
     let vc_iface = client.uvc.vc_iface().unwrap_or(0);
     let entity_id = client.uvc.entity_id(ctrl.entity);
     let wvalue = (ctrl.selector as u16) << 8;
@@ -604,12 +632,17 @@ fn build_probe_payload(format: u8, frame: u8, interval: u32) -> Vec<u8> {
     // bmHint = 0x0000 (bytes 0-1)
     buf[2] = format; // bFormatIndex
     buf[3] = frame; // bFrameIndex
-    // dwFrameInterval (bytes 4-7, little-endian)
+                    // dwFrameInterval (bytes 4-7, little-endian)
     buf[4..8].copy_from_slice(&interval.to_le_bytes());
     buf
 }
 
-fn build_probe_packets(client: &mut Client, format: u8, frame: u8, interval: u32) -> Option<Vec<Packet>> {
+fn build_probe_packets(
+    client: &mut Client,
+    format: u8,
+    frame: u8,
+    interval: u32,
+) -> Option<Vec<Packet>> {
     let vs_iface = client.uvc.vs_iface()?;
     let wvalue = (UVC_VS_PROBE_CONTROL as u16) << 8;
     let index = vs_iface as u16;
@@ -695,7 +728,10 @@ fn build_uvc_raw_packets(
     parts: &[&str],
 ) -> Option<Vec<Packet>> {
     if parts.len() < 6 {
-        let _ = writeln!(w, "Usage: uvc-raw <get|set> <entity-id> <selector> <iface> <length> [data...]");
+        let _ = writeln!(
+            w,
+            "Usage: uvc-raw <get|set> <entity-id> <selector> <iface> <length> [data...]"
+        );
         return None;
     }
     let is_get = match parts[1] {
@@ -803,10 +839,18 @@ fn print_uvc_control_value(w: &mut impl Write, name: &str, req_name: &str, data:
         "ae-mode" => {
             let v = data[0];
             let mut modes = Vec::new();
-            if v & 0x01 != 0 { modes.push("Manual"); }
-            if v & 0x02 != 0 { modes.push("Auto"); }
-            if v & 0x04 != 0 { modes.push("ShutterPriority"); }
-            if v & 0x08 != 0 { modes.push("AperturePriority"); }
+            if v & 0x01 != 0 {
+                modes.push("Manual");
+            }
+            if v & 0x02 != 0 {
+                modes.push("Auto");
+            }
+            if v & 0x04 != 0 {
+                modes.push("ShutterPriority");
+            }
+            if v & 0x08 != 0 {
+                modes.push("AperturePriority");
+            }
             format!(" ({})", modes.join("|"))
         }
         "focus-auto" => {
@@ -825,7 +869,12 @@ fn print_uvc_control_value(w: &mut impl Write, name: &str, req_name: &str, data:
 
 fn print_probe_commit_struct(w: &mut impl Write, data: &[u8], label: &str, req_name: &str) {
     if data.len() < 26 {
-        let _ = writeln!(w, "UVC {label} {req_name}: short response ({} bytes): {:02x?}", data.len(), data);
+        let _ = writeln!(
+            w,
+            "UVC {label} {req_name}: short response ({} bytes): {:02x?}",
+            data.len(),
+            data
+        );
         return;
     }
 
@@ -851,14 +900,20 @@ fn print_probe_commit_struct(w: &mut impl Write, data: &[u8], label: &str, req_n
     let _ = writeln!(w, "  bmHint:                       {hint:#06x}");
     let _ = writeln!(w, "  bFormatIndex:                 {format_index}");
     let _ = writeln!(w, "  bFrameIndex:                  {frame_index}");
-    let _ = writeln!(w, "  dwFrameInterval:              {frame_interval} ({fps:.1} fps)");
+    let _ = writeln!(
+        w,
+        "  dwFrameInterval:              {frame_interval} ({fps:.1} fps)"
+    );
     let _ = writeln!(w, "  wKeyFrameRate:                {key_frame_rate}");
     let _ = writeln!(w, "  wPFrameRate:                  {p_frame_rate}");
     let _ = writeln!(w, "  wCompQuality:                 {comp_quality}");
     let _ = writeln!(w, "  wCompWindowSize:              {comp_window_size}");
     let _ = writeln!(w, "  wDelay:                       {delay}");
     let _ = writeln!(w, "  dwMaxVideoFrameSize:          {max_video_frame_size}");
-    let _ = writeln!(w, "  dwMaxPayloadTransferSize:     {max_payload_transfer_size}");
+    let _ = writeln!(
+        w,
+        "  dwMaxPayloadTransferSize:     {max_payload_transfer_size}"
+    );
 }
 
 fn print_uvc_info_bits(w: &mut impl Write, name: &str, data: &[u8]) {
@@ -870,19 +925,23 @@ fn print_uvc_info_bits(w: &mut impl Write, name: &str, data: &[u8]) {
     let _ = writeln!(
         w,
         "UVC {name} GET_INFO: {bits:#04x} ({}{}{}{}{})",
-        if bits & 0x01 != 0 { "supports_get " } else { "" },
-        if bits & 0x02 != 0 { "supports_set " } else { "" },
+        if bits & 0x01 != 0 {
+            "supports_get "
+        } else {
+            ""
+        },
+        if bits & 0x02 != 0 {
+            "supports_set "
+        } else {
+            ""
+        },
         if bits & 0x04 != 0 { "disabled " } else { "" },
         if bits & 0x08 != 0 { "auto_update " } else { "" },
         if bits & 0x10 != 0 { "async" } else { "" },
     );
 }
 
-fn parse_ctrl_command(
-    w: &mut impl Write,
-    client: &mut Client,
-    parts: &[&str],
-) -> Option<Packet> {
+fn parse_ctrl_command(w: &mut impl Write, client: &mut Client, parts: &[&str]) -> Option<Packet> {
     if parts.len() < 7 {
         let _ = writeln!(
             w,
@@ -1273,7 +1332,10 @@ async fn process_command(
                     }
                 }
             }
-            let _ = writeln!(w, "Received {count} packets ({bytes} data bytes) in {secs}s");
+            let _ = writeln!(
+                w,
+                "Received {count} packets ({bytes} data bytes) in {secs}s"
+            );
         }
         "uvc-info" => print_uvc_info(w, &client.uvc),
         "uvc-set-ids" => parse_uvc_set_ids(w, &mut client.uvc, &parts),
@@ -1285,9 +1347,17 @@ async fn process_command(
                     client.uvc.active = idx;
                     let func = &client.uvc.functions[idx];
                     let vs = func.vs_iface.map_or("none".to_string(), |n| n.to_string());
-                    let _ = writeln!(w, "Active UVC function: {idx} (VC={} VS={vs})", func.vc_iface);
+                    let _ = writeln!(
+                        w,
+                        "Active UVC function: {idx} (VC={} VS={vs})",
+                        func.vc_iface
+                    );
                 } else {
-                    let _ = writeln!(w, "Invalid index. {} function(s) available.", client.uvc.functions.len());
+                    let _ = writeln!(
+                        w,
+                        "Invalid index. {} function(s) available.",
+                        client.uvc.functions.len()
+                    );
                 }
             }
         }
@@ -1303,9 +1373,17 @@ async fn process_command(
                     "def" => vec![UVC_REQ_GET_DEF],
                     "res" => vec![UVC_REQ_GET_RES],
                     "info" => vec![UVC_REQ_GET_INFO],
-                    "all" => vec![UVC_REQ_GET_CUR, UVC_REQ_GET_MIN, UVC_REQ_GET_MAX, UVC_REQ_GET_DEF],
+                    "all" => vec![
+                        UVC_REQ_GET_CUR,
+                        UVC_REQ_GET_MIN,
+                        UVC_REQ_GET_MAX,
+                        UVC_REQ_GET_DEF,
+                    ],
                     other => {
-                        let _ = writeln!(w, "Unknown query '{other}'. Use cur|min|max|def|res|info|all");
+                        let _ = writeln!(
+                            w,
+                            "Unknown query '{other}'. Use cur|min|max|def|res|info|all"
+                        );
                         vec![]
                     }
                 };
@@ -1319,7 +1397,11 @@ async fn process_command(
                     }
                 }
             } else {
-                let _ = writeln!(w, "Unknown control '{}'. See uvc-info for available controls.", parts[1]);
+                let _ = writeln!(
+                    w,
+                    "Unknown control '{}'. See uvc-info for available controls.",
+                    parts[1]
+                );
             }
         }
         "uvc-set" => {
@@ -1336,7 +1418,11 @@ async fn process_command(
                     let _ = writeln!(w, "Invalid value: {}", parts[2]);
                 }
             } else {
-                let _ = writeln!(w, "Unknown control '{}'. See uvc-info for available controls.", parts[1]);
+                let _ = writeln!(
+                    w,
+                    "Unknown control '{}'. See uvc-info for available controls.",
+                    parts[1]
+                );
             }
         }
         "uvc-probe" => {
@@ -1355,7 +1441,10 @@ async fn process_command(
             match build_probe_packets(client, format, frame, interval) {
                 Some(packets) => {
                     let fps = 10_000_000.0 / interval as f64;
-                    let _ = writeln!(w, "Probing: format={format} frame={frame} interval={interval} ({fps:.1} fps)");
+                    let _ = writeln!(
+                        w,
+                        "Probing: format={format} frame={frame} interval={interval} ({fps:.1} fps)"
+                    );
                     for pkt in packets {
                         if let Err(e) = framed.send(pkt).await {
                             let _ = writeln!(w, "Send error: {e}");
@@ -1368,24 +1457,22 @@ async fn process_command(
                 }
             }
         }
-        "uvc-commit" => {
-            match build_commit_packet(client) {
-                Some(pkt) => {
-                    let _ = writeln!(w, "Committing last probe result...");
-                    if let Err(e) = framed.send(pkt).await {
-                        let _ = writeln!(w, "Send error: {e}");
-                        return false;
-                    }
-                }
-                None => {
-                    if client.uvc.vs_iface().is_none() {
-                        let _ = writeln!(w, "No VS interface detected.");
-                    } else {
-                        let _ = writeln!(w, "No probe result to commit. Run uvc-probe first.");
-                    }
+        "uvc-commit" => match build_commit_packet(client) {
+            Some(pkt) => {
+                let _ = writeln!(w, "Committing last probe result...");
+                if let Err(e) = framed.send(pkt).await {
+                    let _ = writeln!(w, "Send error: {e}");
+                    return false;
                 }
             }
-        }
+            None => {
+                if client.uvc.vs_iface().is_none() {
+                    let _ = writeln!(w, "No VS interface detected.");
+                } else {
+                    let _ = writeln!(w, "No probe result to commit. Run uvc-probe first.");
+                }
+            }
+        },
         "uvc-stream" => {
             if parts.len() < 2 {
                 let _ = writeln!(w, "Usage: uvc-stream <endpoint> [pkts] [urbs]");
@@ -1395,14 +1482,25 @@ async fn process_command(
                 if let Some(vs_iface) = client.uvc.vs_iface() {
                     let alt_id = client.alloc_id();
                     let _ = writeln!(w, "Setting alt=1 on VS interface {vs_iface}");
-                    if let Err(e) = framed.send(Packet::set_alt_setting(alt_id, vs_iface, 1)).await {
+                    if let Err(e) = framed
+                        .send(Packet::set_alt_setting(alt_id, vs_iface, 1))
+                        .await
+                    {
                         let _ = writeln!(w, "Send error: {e}");
                         return false;
                     }
                     let iso_id = client.alloc_id();
-                    let _ = writeln!(w, "Starting iso stream on endpoint {ep:#04x} (pkts={pkts}, urbs={urbs})");
+                    let _ = writeln!(
+                        w,
+                        "Starting iso stream on endpoint {ep:#04x} (pkts={pkts}, urbs={urbs})"
+                    );
                     if let Err(e) = framed
-                        .send(Packet::start_iso_stream(iso_id, Endpoint::new(ep), pkts, urbs))
+                        .send(Packet::start_iso_stream(
+                            iso_id,
+                            Endpoint::new(ep),
+                            pkts,
+                            urbs,
+                        ))
                         .await
                     {
                         let _ = writeln!(w, "Send error: {e}");
@@ -1472,10 +1570,7 @@ fn handle_packet(
                     Phase::WaitGetConfig if req.id == client.get_config_id => {
                         client.set_config_id = client.alloc_id();
                         client.phase = Phase::WaitSetConfig;
-                        let _ = writeln!(
-                            w,
-                            "Sending SetConfiguration(config={configuration})"
-                        );
+                        let _ = writeln!(w, "Sending SetConfiguration(config={configuration})");
                         (
                             Some(vec![Packet::set_configuration(
                                 client.set_config_id,
@@ -1512,10 +1607,8 @@ fn handle_packet(
                     Phase::WaitGetAlt if req.id == client.get_alt_id => {
                         client.set_alt_id = client.alloc_id();
                         client.phase = Phase::WaitSetAlt;
-                        let _ = writeln!(
-                            w,
-                            "Sending SetAltSetting(interface={interface}, alt={alt})"
-                        );
+                        let _ =
+                            writeln!(w, "Sending SetAltSetting(interface={interface}, alt={alt})");
                         (
                             Some(vec![Packet::set_alt_setting(
                                 client.set_alt_id,
