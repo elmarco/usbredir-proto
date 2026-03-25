@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -111,6 +112,117 @@ impl AsyncWrite for CountingStream {
     }
 }
 
+// === UVC Constants ===
+
+const UVC_REQ_SET_CUR: u8 = 0x01;
+const UVC_REQ_GET_CUR: u8 = 0x81;
+const UVC_REQ_GET_MIN: u8 = 0x82;
+const UVC_REQ_GET_MAX: u8 = 0x83;
+const UVC_REQ_GET_RES: u8 = 0x84;
+const UVC_REQ_GET_INFO: u8 = 0x86;
+const UVC_REQ_GET_DEF: u8 = 0x87;
+
+const UVC_GET_REQUEST_TYPE: u8 = 0xA1; // device-to-host, class, interface
+const UVC_SET_REQUEST_TYPE: u8 = 0x21; // host-to-device, class, interface
+
+const UVC_VS_PROBE_CONTROL: u8 = 0x01;
+const UVC_VS_COMMIT_CONTROL: u8 = 0x02;
+
+const UVC_PROBE_COMMIT_LEN: u16 = 26;
+
+const UVC_CLASS: u8 = 0x0E;
+const UVC_SC_VIDEOCONTROL: u8 = 0x01;
+const UVC_SC_VIDEOSTREAMING: u8 = 0x02;
+
+#[derive(Debug, Clone, Copy)]
+enum UvcEntity {
+    CameraTerm,
+    ProcUnit,
+}
+
+struct UvcControl {
+    name: &'static str,
+    selector: u8,
+    entity: UvcEntity,
+    data_len: u16,
+}
+
+const UVC_CONTROLS: &[UvcControl] = &[
+    UvcControl { name: "brightness", selector: 0x02, entity: UvcEntity::ProcUnit, data_len: 2 },
+    UvcControl { name: "contrast", selector: 0x03, entity: UvcEntity::ProcUnit, data_len: 2 },
+    UvcControl { name: "exposure-time", selector: 0x04, entity: UvcEntity::CameraTerm, data_len: 4 },
+    UvcControl { name: "focus-abs", selector: 0x06, entity: UvcEntity::CameraTerm, data_len: 2 },
+    UvcControl { name: "focus-auto", selector: 0x08, entity: UvcEntity::CameraTerm, data_len: 1 },
+    UvcControl { name: "ae-mode", selector: 0x02, entity: UvcEntity::CameraTerm, data_len: 1 },
+];
+
+fn find_uvc_control(name: &str) -> Option<&'static UvcControl> {
+    UVC_CONTROLS.iter().find(|c| c.name.eq_ignore_ascii_case(name))
+}
+
+fn uvc_request_name(req: u8) -> &'static str {
+    match req {
+        UVC_REQ_SET_CUR => "SET_CUR",
+        UVC_REQ_GET_CUR => "GET_CUR",
+        UVC_REQ_GET_MIN => "GET_MIN",
+        UVC_REQ_GET_MAX => "GET_MAX",
+        UVC_REQ_GET_RES => "GET_RES",
+        UVC_REQ_GET_INFO => "GET_INFO",
+        UVC_REQ_GET_DEF => "GET_DEF",
+        _ => "UNKNOWN",
+    }
+}
+
+// === UVC State ===
+
+struct UvcPendingRequest {
+    control_name: String,
+    request: u8,
+    is_probe_commit: bool,
+}
+
+struct UvcFunction {
+    vc_iface: u8,
+    vs_iface: Option<u8>,
+}
+
+struct UvcState {
+    functions: Vec<UvcFunction>,
+    active: usize,
+    ct_id: u8,
+    pu_id: u8,
+    pending: HashMap<u64, UvcPendingRequest>,
+    last_probe: Option<Vec<u8>>,
+}
+
+impl UvcState {
+    fn new() -> Self {
+        Self {
+            functions: Vec::new(),
+            active: 0,
+            ct_id: 1,
+            pu_id: 2,
+            pending: HashMap::new(),
+            last_probe: None,
+        }
+    }
+
+    fn vc_iface(&self) -> Option<u8> {
+        self.functions.get(self.active).map(|f| f.vc_iface)
+    }
+
+    fn vs_iface(&self) -> Option<u8> {
+        self.functions.get(self.active).and_then(|f| f.vs_iface)
+    }
+
+    fn entity_id(&self, entity: UvcEntity) -> u8 {
+        match entity {
+            UvcEntity::CameraTerm => self.ct_id,
+            UvcEntity::ProcUnit => self.pu_id,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Phase {
     WaitHello,
@@ -128,6 +240,7 @@ struct Client {
     set_config_id: u64,
     get_alt_id: u64,
     set_alt_id: u64,
+    uvc: UvcState,
 }
 
 impl Client {
@@ -139,6 +252,7 @@ impl Client {
             set_config_id: 0,
             get_alt_id: 0,
             set_alt_id: 0,
+            uvc: UvcState::new(),
         }
     }
 
@@ -297,6 +411,471 @@ fn print_help(w: &mut impl Write) {
     );
     let _ = writeln!(w, "  help");
     let _ = writeln!(w, "  quit");
+    let _ = writeln!(w);
+    let _ = writeln!(w, "UVC commands:");
+    let _ = writeln!(w, "  uvc-info                       - show detected UVC state");
+    let _ = writeln!(w, "  uvc-func <index>               - switch active UVC function");
+    let _ = writeln!(w, "  uvc-set-ids [ct=N] [pu=N]      - override entity IDs");
+    let _ = writeln!(
+        w,
+        "  uvc-get <ctrl> [cur|min|max|def|res|info|all]"
+    );
+    let _ = writeln!(w, "  uvc-set <ctrl> <value>         - set control value");
+    let _ = writeln!(
+        w,
+        "  uvc-probe [format=N] [frame=N] [interval=N]"
+    );
+    let _ = writeln!(w, "  uvc-commit                     - commit last probe");
+    let _ = writeln!(
+        w,
+        "  uvc-stream <endpoint> [pkts] [urbs] - set alt + start iso"
+    );
+    let _ = writeln!(
+        w,
+        "  uvc-raw <get|set> <entity> <sel> <iface> <len> [data...]"
+    );
+}
+
+// === UVC Interface Detection ===
+
+fn uvc_detect_interfaces(
+    w: &mut impl Write,
+    uvc: &mut UvcState,
+    interface_count: u32,
+    interface: &[u8; 32],
+    interface_class: &[u8; 32],
+    interface_subclass: &[u8; 32],
+) {
+    uvc.functions.clear();
+    uvc.active = 0;
+    for i in 0..interface_count as usize {
+        if interface_class[i] == UVC_CLASS && interface_subclass[i] == UVC_SC_VIDEOCONTROL {
+            uvc.functions.push(UvcFunction {
+                vc_iface: interface[i],
+                vs_iface: None,
+            });
+        }
+    }
+    for i in 0..interface_count as usize {
+        if interface_class[i] == UVC_CLASS && interface_subclass[i] == UVC_SC_VIDEOSTREAMING {
+            // Associate VS with the nearest preceding VC
+            if let Some(func) = uvc.functions.iter_mut().rev().find(|f| {
+                f.vs_iface.is_none() && f.vc_iface < interface[i]
+            }) {
+                func.vs_iface = Some(interface[i]);
+            }
+        }
+    }
+    for (idx, func) in uvc.functions.iter().enumerate() {
+        let _ = write!(w, "UVC function {idx}: VC interface={}", func.vc_iface);
+        if let Some(vs) = func.vs_iface {
+            let _ = write!(w, " VS interface={vs}");
+        }
+        let _ = writeln!(w);
+    }
+    if uvc.functions.len() > 1 {
+        let _ = writeln!(w, "UVC active function: 0 (use uvc-func to switch)");
+    }
+}
+
+// === UVC Commands ===
+
+fn print_uvc_info(w: &mut impl Write, uvc: &UvcState) {
+    let _ = writeln!(w, "UVC state:");
+    if uvc.functions.is_empty() {
+        let _ = writeln!(w, "  No UVC functions detected");
+    } else {
+        for (idx, func) in uvc.functions.iter().enumerate() {
+            let marker = if idx == uvc.active { "*" } else { " " };
+            let vs = func.vs_iface.map_or("none".to_string(), |n| n.to_string());
+            let _ = writeln!(w, " {marker} function {idx}: VC={} VS={vs}", func.vc_iface);
+        }
+    }
+    let _ = writeln!(w, "  Camera Terminal ID: {}", uvc.ct_id);
+    let _ = writeln!(w, "  Processing Unit ID: {}", uvc.pu_id);
+    let _ = write!(w, "  Controls:");
+    for ctrl in UVC_CONTROLS {
+        let _ = write!(w, " {}", ctrl.name);
+    }
+    let _ = writeln!(w);
+}
+
+fn parse_uvc_set_ids(w: &mut impl Write, uvc: &mut UvcState, parts: &[&str]) {
+    if parts.len() < 2 {
+        let _ = writeln!(w, "Usage: uvc-set-ids [ct=N] [pu=N]");
+        return;
+    }
+    for part in &parts[1..] {
+        if let Some(val) = part.strip_prefix("ct=") {
+            if let Some(id) = parse_int::<u8>(val) {
+                uvc.ct_id = id;
+                let _ = writeln!(w, "Camera Terminal ID set to {id}");
+            }
+        } else if let Some(val) = part.strip_prefix("pu=") {
+            if let Some(id) = parse_int::<u8>(val) {
+                uvc.pu_id = id;
+                let _ = writeln!(w, "Processing Unit ID set to {id}");
+            }
+        } else {
+            let _ = writeln!(w, "Unknown parameter: {part}. Use ct=N or pu=N");
+        }
+    }
+}
+
+fn build_uvc_get_packets(
+    client: &mut Client,
+    ctrl: &UvcControl,
+    requests: &[u8],
+) -> Vec<Packet> {
+    let vc_iface = client.uvc.vc_iface().unwrap_or(0);
+    let entity_id = client.uvc.entity_id(ctrl.entity);
+    let value = (ctrl.selector as u16) << 8;
+    let index = ((entity_id as u16) << 8) | vc_iface as u16;
+
+    requests
+        .iter()
+        .map(|&req| {
+            let id = client.alloc_id();
+            client.uvc.pending.insert(
+                id,
+                UvcPendingRequest {
+                    control_name: ctrl.name.to_string(),
+                    request: req,
+                    is_probe_commit: false,
+                },
+            );
+            // Endpoint 0x80 (IN) so the parser accepts empty data with length > 0
+            Packet::control_packet(
+                id,
+                Endpoint::new(0x80),
+                req,
+                UVC_GET_REQUEST_TYPE,
+                Status::Success,
+                value,
+                index,
+                ctrl.data_len,
+                Vec::new(),
+            )
+        })
+        .collect()
+}
+
+fn build_uvc_set_packet(
+    client: &mut Client,
+    ctrl: &UvcControl,
+    value_int: u64,
+) -> Packet {
+    let vc_iface = client.uvc.vc_iface().unwrap_or(0);
+    let entity_id = client.uvc.entity_id(ctrl.entity);
+    let wvalue = (ctrl.selector as u16) << 8;
+    let index = ((entity_id as u16) << 8) | vc_iface as u16;
+
+    let data: Vec<u8> = match ctrl.data_len {
+        1 => vec![value_int as u8],
+        2 => (value_int as u16).to_le_bytes().to_vec(),
+        4 => (value_int as u32).to_le_bytes().to_vec(),
+        n => value_int.to_le_bytes()[..n as usize].to_vec(),
+    };
+
+    let id = client.alloc_id();
+    client.uvc.pending.insert(
+        id,
+        UvcPendingRequest {
+            control_name: ctrl.name.to_string(),
+            request: UVC_REQ_SET_CUR,
+            is_probe_commit: false,
+        },
+    );
+    Packet::control_packet(
+        id,
+        Endpoint::new(0),
+        UVC_REQ_SET_CUR,
+        UVC_SET_REQUEST_TYPE,
+        Status::Success,
+        wvalue,
+        index,
+        ctrl.data_len,
+        data,
+    )
+}
+
+fn build_probe_payload(format: u8, frame: u8, interval: u32) -> Vec<u8> {
+    let mut buf = vec![0u8; UVC_PROBE_COMMIT_LEN as usize];
+    // bmHint = 0x0000 (bytes 0-1)
+    buf[2] = format; // bFormatIndex
+    buf[3] = frame; // bFrameIndex
+    // dwFrameInterval (bytes 4-7, little-endian)
+    buf[4..8].copy_from_slice(&interval.to_le_bytes());
+    buf
+}
+
+fn build_probe_packets(client: &mut Client, format: u8, frame: u8, interval: u32) -> Option<Vec<Packet>> {
+    let vs_iface = client.uvc.vs_iface()?;
+    let wvalue = (UVC_VS_PROBE_CONTROL as u16) << 8;
+    let index = vs_iface as u16;
+    let payload = build_probe_payload(format, frame, interval);
+
+    let set_id = client.alloc_id();
+    client.uvc.pending.insert(
+        set_id,
+        UvcPendingRequest {
+            control_name: "PROBE".to_string(),
+            request: UVC_REQ_SET_CUR,
+            is_probe_commit: true,
+        },
+    );
+    let set_pkt = Packet::control_packet(
+        set_id,
+        Endpoint::new(0),
+        UVC_REQ_SET_CUR,
+        UVC_SET_REQUEST_TYPE,
+        Status::Success,
+        wvalue,
+        index,
+        UVC_PROBE_COMMIT_LEN,
+        payload,
+    );
+
+    let get_id = client.alloc_id();
+    client.uvc.pending.insert(
+        get_id,
+        UvcPendingRequest {
+            control_name: "PROBE".to_string(),
+            request: UVC_REQ_GET_CUR,
+            is_probe_commit: true,
+        },
+    );
+    let get_pkt = Packet::control_packet(
+        get_id,
+        Endpoint::new(0x80),
+        UVC_REQ_GET_CUR,
+        UVC_GET_REQUEST_TYPE,
+        Status::Success,
+        wvalue,
+        index,
+        UVC_PROBE_COMMIT_LEN,
+        Vec::new(),
+    );
+
+    Some(vec![set_pkt, get_pkt])
+}
+
+fn build_commit_packet(client: &mut Client) -> Option<Packet> {
+    let vs_iface = client.uvc.vs_iface()?;
+    let probe_data = client.uvc.last_probe.clone()?;
+    let wvalue = (UVC_VS_COMMIT_CONTROL as u16) << 8;
+    let index = vs_iface as u16;
+    let len = probe_data.len() as u16;
+
+    let id = client.alloc_id();
+    client.uvc.pending.insert(
+        id,
+        UvcPendingRequest {
+            control_name: "COMMIT".to_string(),
+            request: UVC_REQ_SET_CUR,
+            is_probe_commit: true,
+        },
+    );
+    Some(Packet::control_packet(
+        id,
+        Endpoint::new(0),
+        UVC_REQ_SET_CUR,
+        UVC_SET_REQUEST_TYPE,
+        Status::Success,
+        wvalue,
+        index,
+        len,
+        probe_data,
+    ))
+}
+
+fn build_uvc_raw_packets(
+    w: &mut impl Write,
+    client: &mut Client,
+    parts: &[&str],
+) -> Option<Vec<Packet>> {
+    if parts.len() < 6 {
+        let _ = writeln!(w, "Usage: uvc-raw <get|set> <entity-id> <selector> <iface> <length> [data...]");
+        return None;
+    }
+    let is_get = match parts[1] {
+        "get" => true,
+        "set" => false,
+        other => {
+            let _ = writeln!(w, "Expected 'get' or 'set', got '{other}'");
+            return None;
+        }
+    };
+    let entity_id: u8 = parse_int(parts[2])?;
+    let selector: u8 = parse_int(parts[3])?;
+    let iface: u8 = parse_int(parts[4])?;
+    let length: u16 = parse_int(parts[5])?;
+
+    let mut data = Vec::new();
+    if !is_get {
+        for part in &parts[6..] {
+            data.push(parse_int::<u8>(part)?);
+        }
+    }
+
+    let (request, requesttype) = if is_get {
+        (UVC_REQ_GET_CUR, UVC_GET_REQUEST_TYPE)
+    } else {
+        (UVC_REQ_SET_CUR, UVC_SET_REQUEST_TYPE)
+    };
+
+    let wvalue = (selector as u16) << 8;
+    let index = ((entity_id as u16) << 8) | iface as u16;
+    let id = client.alloc_id();
+    client.uvc.pending.insert(
+        id,
+        UvcPendingRequest {
+            control_name: format!("raw(entity={entity_id},sel={selector:#04x})"),
+            request,
+            is_probe_commit: false,
+        },
+    );
+    let ep = if is_get { 0x80 } else { 0 };
+    Some(vec![Packet::control_packet(
+        id,
+        Endpoint::new(ep),
+        request,
+        requesttype,
+        Status::Success,
+        wvalue,
+        index,
+        length,
+        data,
+    )])
+}
+
+// === UVC Response Pretty-Printing ===
+
+fn try_print_uvc_response(w: &mut impl Write, d: &DataPacket, uvc: &mut UvcState) -> bool {
+    let pending = match uvc.pending.remove(&d.id) {
+        Some(p) => p,
+        None => return false,
+    };
+
+    let req_name = uvc_request_name(pending.request);
+
+    if d.status != Status::Success {
+        let _ = writeln!(
+            w,
+            "UVC {} {}: {:?}",
+            pending.control_name, req_name, d.status
+        );
+        return true;
+    }
+
+    if pending.is_probe_commit {
+        if pending.request == UVC_REQ_SET_CUR {
+            let _ = writeln!(w, "UVC {} {}: ok", pending.control_name, req_name);
+        } else {
+            if pending.request == UVC_REQ_GET_CUR {
+                uvc.last_probe = Some(d.data.to_vec());
+            }
+            print_probe_commit_struct(w, &d.data, &pending.control_name, req_name);
+        }
+    } else if pending.request == UVC_REQ_GET_INFO {
+        print_uvc_info_bits(w, &pending.control_name, &d.data);
+    } else if pending.request == UVC_REQ_SET_CUR {
+        let _ = writeln!(w, "UVC {} {}: ok", pending.control_name, req_name);
+    } else {
+        print_uvc_control_value(w, &pending.control_name, req_name, &d.data);
+    }
+    true
+}
+
+fn print_uvc_control_value(w: &mut impl Write, name: &str, req_name: &str, data: &[u8]) {
+    let val: i64 = match data.len() {
+        1 => data[0] as i8 as i64,
+        2 => i16::from_le_bytes([data[0], data[1]]) as i64,
+        4 => i32::from_le_bytes([data[0], data[1], data[2], data[3]]) as i64,
+        _ => {
+            let _ = writeln!(w, "UVC {name} {req_name}: {:02x?}", data);
+            return;
+        }
+    };
+
+    // Special formatting for known controls
+    let extra = match name {
+        "ae-mode" => {
+            let v = data[0];
+            let mut modes = Vec::new();
+            if v & 0x01 != 0 { modes.push("Manual"); }
+            if v & 0x02 != 0 { modes.push("Auto"); }
+            if v & 0x04 != 0 { modes.push("ShutterPriority"); }
+            if v & 0x08 != 0 { modes.push("AperturePriority"); }
+            format!(" ({})", modes.join("|"))
+        }
+        "focus-auto" => {
+            format!(" ({})", if data[0] != 0 { "On" } else { "Off" })
+        }
+        _ => String::new(),
+    };
+
+    let _ = writeln!(
+        w,
+        "UVC {name} {req_name}: {val} ({:#0width$x}){extra}",
+        val,
+        width = data.len() * 2 + 2,
+    );
+}
+
+fn print_probe_commit_struct(w: &mut impl Write, data: &[u8], label: &str, req_name: &str) {
+    if data.len() < 26 {
+        let _ = writeln!(w, "UVC {label} {req_name}: short response ({} bytes): {:02x?}", data.len(), data);
+        return;
+    }
+
+    let hint = u16::from_le_bytes([data[0], data[1]]);
+    let format_index = data[2];
+    let frame_index = data[3];
+    let frame_interval = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
+    let key_frame_rate = u16::from_le_bytes([data[8], data[9]]);
+    let p_frame_rate = u16::from_le_bytes([data[10], data[11]]);
+    let comp_quality = u16::from_le_bytes([data[12], data[13]]);
+    let comp_window_size = u16::from_le_bytes([data[14], data[15]]);
+    let delay = u16::from_le_bytes([data[16], data[17]]);
+    let max_video_frame_size = u32::from_le_bytes([data[18], data[19], data[20], data[21]]);
+    let max_payload_transfer_size = u32::from_le_bytes([data[22], data[23], data[24], data[25]]);
+
+    let fps = if frame_interval > 0 {
+        10_000_000.0 / frame_interval as f64
+    } else {
+        0.0
+    };
+
+    let _ = writeln!(w, "UVC {label} {req_name}:");
+    let _ = writeln!(w, "  bmHint:                       {hint:#06x}");
+    let _ = writeln!(w, "  bFormatIndex:                 {format_index}");
+    let _ = writeln!(w, "  bFrameIndex:                  {frame_index}");
+    let _ = writeln!(w, "  dwFrameInterval:              {frame_interval} ({fps:.1} fps)");
+    let _ = writeln!(w, "  wKeyFrameRate:                {key_frame_rate}");
+    let _ = writeln!(w, "  wPFrameRate:                  {p_frame_rate}");
+    let _ = writeln!(w, "  wCompQuality:                 {comp_quality}");
+    let _ = writeln!(w, "  wCompWindowSize:              {comp_window_size}");
+    let _ = writeln!(w, "  wDelay:                       {delay}");
+    let _ = writeln!(w, "  dwMaxVideoFrameSize:          {max_video_frame_size}");
+    let _ = writeln!(w, "  dwMaxPayloadTransferSize:     {max_payload_transfer_size}");
+}
+
+fn print_uvc_info_bits(w: &mut impl Write, name: &str, data: &[u8]) {
+    if data.is_empty() {
+        let _ = writeln!(w, "UVC {name} GET_INFO: (empty)");
+        return;
+    }
+    let bits = data[0];
+    let _ = writeln!(
+        w,
+        "UVC {name} GET_INFO: {bits:#04x} ({}{}{}{}{})",
+        if bits & 0x01 != 0 { "supports_get " } else { "" },
+        if bits & 0x02 != 0 { "supports_set " } else { "" },
+        if bits & 0x04 != 0 { "disabled " } else { "" },
+        if bits & 0x08 != 0 { "auto_update " } else { "" },
+        if bits & 0x10 != 0 { "async" } else { "" },
+    );
 }
 
 fn parse_ctrl_command(
@@ -696,6 +1275,154 @@ async fn process_command(
             }
             let _ = writeln!(w, "Received {count} packets ({bytes} data bytes) in {secs}s");
         }
+        "uvc-info" => print_uvc_info(w, &client.uvc),
+        "uvc-set-ids" => parse_uvc_set_ids(w, &mut client.uvc, &parts),
+        "uvc-func" => {
+            if parts.len() < 2 {
+                let _ = writeln!(w, "Usage: uvc-func <index>");
+            } else if let Some(idx) = parse_int::<usize>(parts[1]) {
+                if idx < client.uvc.functions.len() {
+                    client.uvc.active = idx;
+                    let func = &client.uvc.functions[idx];
+                    let vs = func.vs_iface.map_or("none".to_string(), |n| n.to_string());
+                    let _ = writeln!(w, "Active UVC function: {idx} (VC={} VS={vs})", func.vc_iface);
+                } else {
+                    let _ = writeln!(w, "Invalid index. {} function(s) available.", client.uvc.functions.len());
+                }
+            }
+        }
+        "uvc-get" => {
+            if parts.len() < 2 {
+                let _ = writeln!(w, "Usage: uvc-get <control> [cur|min|max|def|res|info|all]");
+            } else if let Some(ctrl) = find_uvc_control(parts[1]) {
+                let query = parts.get(2).copied().unwrap_or("cur");
+                let requests: Vec<u8> = match query {
+                    "cur" => vec![UVC_REQ_GET_CUR],
+                    "min" => vec![UVC_REQ_GET_MIN],
+                    "max" => vec![UVC_REQ_GET_MAX],
+                    "def" => vec![UVC_REQ_GET_DEF],
+                    "res" => vec![UVC_REQ_GET_RES],
+                    "info" => vec![UVC_REQ_GET_INFO],
+                    "all" => vec![UVC_REQ_GET_CUR, UVC_REQ_GET_MIN, UVC_REQ_GET_MAX, UVC_REQ_GET_DEF],
+                    other => {
+                        let _ = writeln!(w, "Unknown query '{other}'. Use cur|min|max|def|res|info|all");
+                        vec![]
+                    }
+                };
+                if !requests.is_empty() {
+                    let packets = build_uvc_get_packets(client, ctrl, &requests);
+                    for pkt in packets {
+                        if let Err(e) = framed.send(pkt).await {
+                            let _ = writeln!(w, "Send error: {e}");
+                            return false;
+                        }
+                    }
+                }
+            } else {
+                let _ = writeln!(w, "Unknown control '{}'. See uvc-info for available controls.", parts[1]);
+            }
+        }
+        "uvc-set" => {
+            if parts.len() < 3 {
+                let _ = writeln!(w, "Usage: uvc-set <control> <value>");
+            } else if let Some(ctrl) = find_uvc_control(parts[1]) {
+                if let Some(val) = parse_int::<u64>(parts[2]) {
+                    let pkt = build_uvc_set_packet(client, ctrl, val);
+                    if let Err(e) = framed.send(pkt).await {
+                        let _ = writeln!(w, "Send error: {e}");
+                        return false;
+                    }
+                } else {
+                    let _ = writeln!(w, "Invalid value: {}", parts[2]);
+                }
+            } else {
+                let _ = writeln!(w, "Unknown control '{}'. See uvc-info for available controls.", parts[1]);
+            }
+        }
+        "uvc-probe" => {
+            let mut format: u8 = 1;
+            let mut frame: u8 = 1;
+            let mut interval: u32 = 333333;
+            for part in &parts[1..] {
+                if let Some(v) = part.strip_prefix("format=") {
+                    format = parse_int(v).unwrap_or(format);
+                } else if let Some(v) = part.strip_prefix("frame=") {
+                    frame = parse_int(v).unwrap_or(frame);
+                } else if let Some(v) = part.strip_prefix("interval=") {
+                    interval = parse_int(v).unwrap_or(interval);
+                }
+            }
+            match build_probe_packets(client, format, frame, interval) {
+                Some(packets) => {
+                    let fps = 10_000_000.0 / interval as f64;
+                    let _ = writeln!(w, "Probing: format={format} frame={frame} interval={interval} ({fps:.1} fps)");
+                    for pkt in packets {
+                        if let Err(e) = framed.send(pkt).await {
+                            let _ = writeln!(w, "Send error: {e}");
+                            return false;
+                        }
+                    }
+                }
+                None => {
+                    let _ = writeln!(w, "No VS interface detected. Use uvc-info to check.");
+                }
+            }
+        }
+        "uvc-commit" => {
+            match build_commit_packet(client) {
+                Some(pkt) => {
+                    let _ = writeln!(w, "Committing last probe result...");
+                    if let Err(e) = framed.send(pkt).await {
+                        let _ = writeln!(w, "Send error: {e}");
+                        return false;
+                    }
+                }
+                None => {
+                    if client.uvc.vs_iface().is_none() {
+                        let _ = writeln!(w, "No VS interface detected.");
+                    } else {
+                        let _ = writeln!(w, "No probe result to commit. Run uvc-probe first.");
+                    }
+                }
+            }
+        }
+        "uvc-stream" => {
+            if parts.len() < 2 {
+                let _ = writeln!(w, "Usage: uvc-stream <endpoint> [pkts] [urbs]");
+            } else if let Some(ep) = parse_int::<u8>(parts[1]) {
+                let pkts: u8 = parts.get(2).and_then(|s| parse_int(s)).unwrap_or(8);
+                let urbs: u8 = parts.get(3).and_then(|s| parse_int(s)).unwrap_or(4);
+                if let Some(vs_iface) = client.uvc.vs_iface() {
+                    let alt_id = client.alloc_id();
+                    let _ = writeln!(w, "Setting alt=1 on VS interface {vs_iface}");
+                    if let Err(e) = framed.send(Packet::set_alt_setting(alt_id, vs_iface, 1)).await {
+                        let _ = writeln!(w, "Send error: {e}");
+                        return false;
+                    }
+                    let iso_id = client.alloc_id();
+                    let _ = writeln!(w, "Starting iso stream on endpoint {ep:#04x} (pkts={pkts}, urbs={urbs})");
+                    if let Err(e) = framed
+                        .send(Packet::start_iso_stream(iso_id, Endpoint::new(ep), pkts, urbs))
+                        .await
+                    {
+                        let _ = writeln!(w, "Send error: {e}");
+                        return false;
+                    }
+                } else {
+                    let _ = writeln!(w, "No VS interface detected.");
+                }
+            }
+        }
+        "uvc-raw" => {
+            if let Some(packets) = build_uvc_raw_packets(w, client, &parts) {
+                for pkt in packets {
+                    if let Err(e) = framed.send(pkt).await {
+                        let _ = writeln!(w, "Send error: {e}");
+                        return false;
+                    }
+                }
+            }
+        }
         other => {
             let _ = writeln!(w, "Unknown command: {other}. Type 'help' for help.");
         }
@@ -833,6 +1560,14 @@ fn handle_packet(
                 &info.interface_subclass,
                 &info.interface_protocol,
             );
+            uvc_detect_interfaces(
+                w,
+                &mut client.uvc,
+                info.interface_count,
+                &info.interface,
+                &info.interface_class,
+                &info.interface_subclass,
+            );
             (None, false)
         }
 
@@ -848,7 +1583,9 @@ fn handle_packet(
         }
 
         Packet::Data(d) => {
-            if matches!(d.kind, DataKind::Control { .. }) {
+            if try_print_uvc_response(w, d, &mut client.uvc) {
+                // handled by UVC pretty-printer
+            } else if matches!(d.kind, DataKind::Control { .. }) {
                 print_control_response(w, d);
             } else {
                 let _ = writeln!(w, "Data: {d}");
